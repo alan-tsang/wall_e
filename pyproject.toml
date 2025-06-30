@@ -11,8 +11,8 @@ authors = [
 keywords = ["artificial intelligence", "deep learning", "develop"]
 description = "some algorithms and a personal deep learning experiment framework for pytorch"
 readme = "README.md"
-requires-python = ">=3.8"
-license = {file = "LICENSE"}
+requires-python = ">=3.9"
+license = "LGPL-2.1"
 classifiers = [
   "Development Status :: 4 - Beta",
 
@@ -20,7 +20,6 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence Develop",
 
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
@@ -49,5 +48,13 @@ other = ["matplotlib", "torchviz", "graphviz", "pynvml"]
 homepage = "https://www.github.com/alan-tsang/wall_e"
 
 [tool.setuptools]
-packages = {find = {}}
-package-dir = {"" = "wall_e"}
+packages = {find = {where = [""], exclude = ["test", "test.*"]}}
+package-dir = {"" = "."}
+
+[options.exclude_package_data]
+"" = [
+    "test/**",
+    "*.yml",
+    "*.yaml",
+    "*.txt"
+]
