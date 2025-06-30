@@ -10,7 +10,7 @@ setup(
     author_email='zeiton@csu.edu.cn',
     description='some algorithms and a personal deep learning experiment framework for pytorch',
     install_requires=[
-        "torch>=2.3.0",
+        "torch>=1.11.0",
         "datasets",
         "omegaconf>=1.4.0",
         "numpy",
