@@ -1,0 +1,57 @@
+name: Wall_E Package
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+  pull_request:
+    branches:
+      - master
+      - develop
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        torch-config:
+          - { torch: '2.5.1', torchvision: '0.20.1', torchaudio: '2.5.1', cuda: 'cu124' }
+          - { torch: '2.4.1', torchvision: '0.19.1', torchaudio: '2.4.1', cuda: 'cu121' }
+          - { torch: '2.4.0', torchvision: '0.19.0', torchaudio: '2.4.0', cuda: 'cu121' }
+          - { torch: '2.3.1', torchvision: '0.18.1', torchaudio: '2.3.1', cuda: 'cu121' }
+          - { torch: '2.3.0', torchvision: '0.18.0', torchaudio: '2.3.0', cuda: 'cu121' }
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install PyTorch and related libraries
+        run: |
+          pip install torch==${{ matrix.torch-config.torch }} torchvision==${{ matrix.torch-config.torchvision }} torchaudio==${{ matrix.torch-config.torchaudio }} --index-url https://download.pytorch.org/whl/${{ matrix.torch-config.cuda }}
+      - name: Install dependencies
+        run: pip install ./
+      - name: Run unit tests
+        run: |
+          pip install pytest
+          pytest ./test/
+
+#  code-check:
+#    runs-on: ubuntu-latest
+#    steps:
+#      - name: Checkout code
+#        uses: actions/checkout@v3
+#      - name: Set up Python
+#        uses: actions/setup-python@v4
+#        with:
+#          python-version: "3.10"
+#      - name: Install dependencies
+#        run: |
+#          pip install flake8 black
+#      - name: Check code formatting
+#        run: black --check .
+#      - name: Run flake8
+#        run: flake8 .
