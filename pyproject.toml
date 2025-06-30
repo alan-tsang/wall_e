@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=64.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wall_e"
+version = "1.0.0"
+authors = [
+    {name = "Zhicun Zeng", email = "zeiton@csu.edu.cn"}
+]
+keywords = ["artificial intelligence", "deep learning", "develop"]
+description = "some algorithms and a personal deep learning experiment framework for pytorch"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+classifiers = [
+  "Development Status :: 4 - Beta",
+
+  "Intended Audience :: Developers",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence Develop",
+
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "torch>=1.11.0",
+    "datasets",
+    "omegaconf>=1.4.0",
+    "numpy",
+    "pandas",
+    "pyyaml",
+    "ray",
+    "transformers",
+    "rdkit",
+    "wandb"
+]
+
+[project.optional-dependencies]
+deepspeed = ["deepspeed"]
+torch_geometric = ["torch_geometric"]
+torch_scatter = ["torch_scatter"]
+other = ["matplotlib", "torchviz", "graphviz", "pynvml"]
+
+[project.urls]
+homepage = "https://www.github.com/alan-tsang/wall_e"
+
+[tool.setuptools]
+packages = {find = {}}
+package-dir = {"" = "wall_e"}

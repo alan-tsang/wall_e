@@ -1,0 +1,17 @@
+tune:
+  # 基础调优配置
+  metric: loss
+  mode: min
+  max_t: 100
+  grace_period: 1
+  reduction_factor: 2
+  num_workers: 1
+  use_gpu: true
+  num_samples: 1
+  name: model_tuning
+  storage_path: ray_results
+  # 超参数搜索空间定义 (点路径格式)
+  param_space:
+    model.num_layers:
+      type: grid_search
+      values: [2, 4, 6]

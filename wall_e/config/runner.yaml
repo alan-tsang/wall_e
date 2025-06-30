@@ -1,0 +1,80 @@
+# The name of the experiment
+run_name: 'copy str'
+run_description: "use transformer to copy str"
+
+# Custom parameters
+dataset:
+  type: ""
+
+model:
+  type: ""
+
+metric:
+  type: ""
+
+
+# Support Parameters
+optimizer:
+  # 使用的是AdamW
+  lr: 3e-4
+  weight_decay: 0.01
+scheduler:
+  type: "LinearWarmupCosineLRScheduler"
+  min_lr: 3e-5
+  max_lr: 3e-4
+  warmup_rate: 0.05
+  warmup_start_lr: 1e-5
+training:
+  epochs: 20
+#  ds_config: '/home/alan/desktop/project/tmp/wall_e/example/deepspeed.json'
+  is_sweep: false
+  gradient_accumulation: 1
+  resume_from: null
+  load_from: null
+#  activation_checkpoint: [
+#    'transformer.encoder.layers.0',
+#    'transformer.encoder.layers.1',
+#    'transformer.decoder.layers.0',
+#    'transformer.decoder.layers.1'
+#  ]
+  grad_clip: null
+  fp16: false
+  print_model: false
+
+  progress_show:
+    loss: false
+    valid_acc: true
+    test_acc: true
+
+  valid_begin_epoch: 2
+  valid_interval_epoch: 1
+  valid_begin_iter: 10
+  valid_interval_iter: 5
+  test_begin_epoch: 3
+  test_interval_epoch: 1
+  test_begin_iter: 60
+  test_interval_iter: 5
+  progress_every_n_epochs: 1
+  progress_every_n_batches: 1
+
+log:
+  to_file: true
+  folder: "./assert/logs"
+  level: "INFO"
+  rank_level: "WARNING"
+pt:
+  enable: true
+  dir: "./assert/checkpoints"
+  best_monitor:
+    loss: false
+  topk: 5
+  begin_epoch: 2
+  epoch_interval: 2
+  begin_batch: 10
+  batch_interval: 10
+wandb:
+  enable: true
+  proj_name: ""
+  offline: true
+  dir: "./assert"
+  tags: ["", ""]
