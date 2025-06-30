@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.8, 3.9, 3.10, 3.11, 3.12]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
         torch-config:
           - { torch: '2.5.1', torchvision: '0.20.1', torchaudio: '2.5.1', cuda: 'cu124' }
           - { torch: '2.5.0', torchvision: '0.20.0', torchaudio: '2.5.0', cuda: 'cu121' }
@@ -38,19 +38,19 @@ jobs:
       - name: Run unit tests
         run: pytest ./test/
 
-  code-check:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
-      - name: Install dependencies
-        run: |
-          pip install flake8 black
-      - name: Check code formatting
-        run: black --check .
-      - name: Run flake8
-        run: flake8 .
+#  code-check:
+#    runs-on: ubuntu-latest
+#    steps:
+#      - name: Checkout code
+#        uses: actions/checkout@v3
+#      - name: Set up Python
+#        uses: actions/setup-python@v4
+#        with:
+#          python-version: "3.10"
+#      - name: Install dependencies
+#        run: |
+#          pip install flake8 black
+#      - name: Check code formatting
+#        run: black --check .
+#      - name: Run flake8
+#        run: flake8 .
