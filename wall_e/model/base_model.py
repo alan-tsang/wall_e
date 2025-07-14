@@ -10,13 +10,30 @@ from typing import Dict, List
 import numpy as np
 import torch
 import torch.nn as nn
+from abc import ABC, abstractmethod
 
 
-class BaseModel(nn.Module):
+class BaseModel(nn.Module, ABC):
     """Base class for models."""
 
     def __init__(self):
         super().__init__()
+        
+    @abstractmethod
+    def train_step(self, *args, **kwargs):
+        pass
+    
+    @abstractmethod
+    def valid_step(self, *args, **kwargs):
+        pass
+    
+    @abstractmethod
+    def test_step(self, *args, **kwargs):
+        pass
+    
+    @abstractmethod
+    def compute_loss(self, *args, **kwargs):
+        pass
 
 
     def load_checkpoint(self, cached_path):
