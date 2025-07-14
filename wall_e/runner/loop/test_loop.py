@@ -30,10 +30,14 @@ class TestLoop(BaseLoop):
         self.evaluator = evaluator  # type: ignore
         self.fp16 = fp16
 
+    def before_test(self):
+        self.dataloader = self.runner.wrap_dataloader(self.dataloader)
+
     def run(self) -> dict:
         """Launch test."""
         self.runner.before_test()
         self.runner.model.eval()
+        self.before_test()
 
         for idx, data_batch in enumerate(self.dataloader):
             data_batch = move_data_to_device(data_batch, self.runner.device)
@@ -57,7 +61,11 @@ class TestLoop(BaseLoop):
         """
         # predictions should be sequence of BaseDataElement
         with autocast(enabled=self.fp16):
-            outputs = self.runner.model.test_step(**data_batch)
+            if hasattr(self.runner.model, "module"):
+                # For DataParallel or DistributedDataParallel
+                outputs = self.runner.model.module.test_step(data_batch)
+            else:
+                outputs = self.runner.model.test_step(data_batch)
 
         if self.evaluator is not None:
             self.evaluator.process(data_samples=outputs, data_batch=data_batch)
