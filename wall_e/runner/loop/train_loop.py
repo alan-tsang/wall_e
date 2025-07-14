@@ -102,6 +102,7 @@ class TrainLoop(BaseLoop):
         return OmegaConf.select(self.runner.cfg, "training.grad_clip", default = None)
 
     def prepare_run(self):
+        self.dataloader = self.runner.wrap_dataloader(self.dataloader)
         if self.runner.state.resume_from:
             self.resume()
         # 在runner的setup_model，处理了
