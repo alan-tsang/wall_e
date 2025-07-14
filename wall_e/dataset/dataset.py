@@ -1,6 +1,6 @@
 import os
 from typing import Sequence, Union, Optional, Callable, List, Dict, Any
-from datasets import Dataset, DatasetDict, IterableDataset, load_dataset
+from datasets import Dataset, DatasetDict, IterableDataset, load_dataset, load_from_disk
 import warnings
 
 from .base_dataset import BaseDataset
@@ -40,7 +40,7 @@ class BaseMapDataset(BaseDataset):
             """return a Dataset object"""
             if os.path.exists(data_source):
                 if os.path.isdir(data_source):
-                    self.dataset = load_dataset(data_source)
+                    self.dataset = load_from_disk(data_source)
                 else:
                     data_format = infer_data_format(data_source)
                     if data_format is None:

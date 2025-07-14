@@ -9,7 +9,7 @@
 from copy import deepcopy
 from pprint import pprint
 
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -21,16 +21,16 @@ TENSOR = torch.Tensor
 def clones(module, n):
     return nn.ModuleList([deepcopy(module) for _ in range(n)])
 
-def plot_attention(weights):
-    """
-    @param weights: (l, l)
-    """
-    plt.imshow(weights, cmap='viridis', aspect='auto')
-    plt.colorbar(label='Attention Score')
-    plt.title('Attention Heatmap')
-    plt.xlabel('Tokens')
-    plt.ylabel('Tokens')
-    plt.show()
+# def plot_attention(weights):
+#     """
+#     @param weights: (l, l)
+#     """
+#     plt.imshow(weights, cmap='viridis', aspect='auto')
+#     plt.colorbar(label='Attention Score')
+#     plt.title('Attention Heatmap')
+#     plt.xlabel('Tokens')
+#     plt.ylabel('Tokens')
+#     plt.show()
 
 
 class RotaryMultiDotProductionAttention(nn.Module):

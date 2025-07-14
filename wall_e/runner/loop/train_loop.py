@@ -99,10 +99,13 @@ class TrainLoop(BaseLoop):
         return OmegaConf.select(self.runner.cfg, "training.grad_clip", default = None)
 
     def prepare_run(self):
+        self.dataloader = self.runner.wrap_dataloader(self.dataloader)
         if self.runner.state.resume_from:
             self.resume()
-        elif self.runner.state.load_from:
-            self.load()
+        # 在runner的setup_model，处理了
+        # elif self.runner.state.load_from:
+        #     self.load()
+
 
     def run(self) -> torch.nn.Module:
         """Launch training."""
@@ -174,9 +177,9 @@ class TrainLoop(BaseLoop):
 
         if hasattr(self.runner.model, "module"):
             # For DataParallel or DistributedDataParallel
-            model_output = self.runner.model.module.train_step(**data_batch)
+            model_output = self.runner.model.module.train_step(data_batch)
         else:
-            model_output = self.runner.model.train_step(**data_batch)
+            model_output = self.runner.model.train_step(data_batch)
         assert "loss" in model_output, "模型输出必须返回包含loss的字典"
         self.backward(self.scaler, model_output["loss"])
         self.register_model_output(model_output)
@@ -268,4 +271,9 @@ class TrainLoop(BaseLoop):
         print_log(f'恢复点 epoch: {start_epoch}', "current")
 
     def load(self):
-        self.runner.model.load_checkpoint(self.runner.state.load_from)
+        if hasattr(self.runner.model, "module"):
+            # For DataParallel or DistributedDataParallel
+            self.runner.model.module.load_checkpoint(self.runner.state.load_from)
+        else:
+            self.runner.model.load_checkpoint(self.runner.state.load_from)
+
