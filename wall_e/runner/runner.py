@@ -7,6 +7,7 @@ import traceback
 from typing import List, Optional, Union
 
 import torch
+from torch import nn
 import torch.distributed as dist
 from torch.utils.data import DataLoader
 from omegaconf import omegaconf, OmegaConf
