@@ -1,10 +1,7 @@
-# Copyright (c) OpenMMLab. All rights reserved.
 from abc import ABCMeta, abstractmethod
 from typing import Any, Dict, Union
 
 from torch.utils.data import DataLoader
-
-from wall_e import Runner
 
 
 class BaseLoop(metaclass=ABCMeta):
@@ -19,7 +16,7 @@ class BaseLoop(metaclass=ABCMeta):
             dataset each iteration.
     """
 
-    def __init__(self, runner: Runner, dataloader: Union[DataLoader, Dict], shuffle) -> None:
+    def __init__(self, runner: 'Runner', dataloader: Union[DataLoader, Dict], shuffle) -> None:
         self._runner = runner
         self.dataloader = runner.wrap_dataloader(dataloader, shuffle = shuffle)
 

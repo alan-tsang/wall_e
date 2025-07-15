@@ -1,7 +1,8 @@
 """
 adapted from https://github.com/salesforce/LAVIS/blob/main/lavis/common/registry.py
 """
-
+from typing import Optional
+from ..model import BaseModel
 
 class Registry:
     mapping = {
@@ -29,11 +30,11 @@ class Registry:
 
         def wrap(model_cls):
             from torch import nn
-            from ..model import BaseModel, BasePreTrainedModel
+            from ..model import BaseModel
 
             assert issubclass(
-                model_cls, (BaseModel, BasePreTrainedModel, nn.Module)
-            ), "All models must inherit BaseModel class or BasePreTrainedModel class"
+                model_cls, (BaseModel, nn.Module)
+            ), "All models must inherit BaseModel or nn.Module class"
             if name in cls.mapping["model_name_mapping"]:
                 raise KeyError(
                     "Name '{}' already registered for {}.".format(
@@ -228,7 +229,7 @@ class Registry:
 
 
     @classmethod
-    def get_model_class(cls, name):
+    def get_model_class(cls, name) -> Optional[BaseModel]:
         return cls.mapping["model_name_mapping"].get(name, None)
 
     @classmethod

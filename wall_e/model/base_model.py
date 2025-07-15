@@ -1,6 +1,3 @@
-"""
-adapted from salesforce's lavis: https://github.com/salesforce/LAVIS/blob/main/lavis/models/base_model.py
-"""
 import inspect
 import logging
 import re
@@ -20,19 +17,19 @@ class BaseModel(nn.Module, ABC):
         super().__init__()
         
     @abstractmethod
-    def train_step(self, *args, **kwargs):
+    def train_step(self, *args, **kwargs) -> dict:
         pass
     
     @abstractmethod
-    def valid_step(self, *args, **kwargs):
+    def valid_step(self, *args, **kwargs) -> dict:
         pass
     
     @abstractmethod
-    def test_step(self, *args, **kwargs):
+    def test_step(self, *args, **kwargs) -> dict:
         pass
     
     @abstractmethod
-    def compute_loss(self, *args, **kwargs):
+    def compute_loss(self, *args, **kwargs) -> dict:
         pass
 
 
@@ -102,7 +99,7 @@ class BaseModel(nn.Module, ABC):
             """
             model_cls = cls
         else:
-            raise ValueError("Must specify type when using BaseModel directly")
+            raise ValueError("直接使用 BaseModel 时必须指定类型type")
 
         valid_args = inspect.signature(model_cls.__init__).parameters
         model_args = {k: v for k, v in config_dict.items() if k in valid_args}
@@ -147,7 +144,10 @@ class BaseModel(nn.Module, ABC):
                                input,
                                save_path: str = "model_graph.png"):
         """可视化模型计算图（需要安装torchviz）"""
-        from torchviz import make_dot
+        try:
+            from torchviz import make_dot
+        except ImportError:
+            raise ImportError("torchviz is required for model visualization. Install it with: pip install torchviz")
 
         output = self(**input)
         graph = make_dot(output, params = dict(self.named_parameters()))
