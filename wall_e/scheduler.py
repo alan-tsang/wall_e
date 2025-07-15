@@ -1,5 +1,6 @@
 import math
 from .common.registry import registry
+from .logging.util import print_log
 
 
 @registry.register_lr_scheduler("LinearWarmupStepLRScheduler")
@@ -57,7 +58,7 @@ class LinearWarmupStepLRScheduler:
                 min_lr = self.min_lr,
                 decay_rate = self.decay_rate,
             )
-        self.logger.info(f"当前学习率: {lr:.6f} at epoch {cur_epoch}, step {cur_step}")
+        print_log(f"当前学习率: {lr:.6f} at epoch {cur_epoch}, step {cur_step}", "current")
 
     def state_dict(self):
         return {
@@ -139,7 +140,8 @@ class LinearWarmupCosineLRScheduler:
                 max_lr = self.max_lr,
                 min_lr = self.min_lr,
             )
-        self.logger.info(f"当前学习率: {lr:.6f} at step {cur_step}")
+        print_log(f"当前学习率: {lr:.6f} at step {cur_step}", "current")
+        
 
     def state_dict(self):
         return {

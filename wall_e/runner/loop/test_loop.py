@@ -21,10 +21,11 @@ class TestLoop(BaseLoop):
 
     def __init__(self,
                  runner,
-                 dataloader: Union[DataLoader, Dict],
-                 evaluator: Union[Evaluator, Dict, List],
+                 dataloader: DataLoader,
+                 evaluator: Evaluator | None = None,
                  shuffle = False,
-                 fp16: bool = False):
+                 fp16: bool = False
+                 ):
         super().__init__(runner, dataloader, shuffle)
 
         self.evaluator = evaluator  # type: ignore
@@ -41,19 +42,20 @@ class TestLoop(BaseLoop):
 
         for idx, data_batch in enumerate(self.dataloader):
             data_batch = move_data_to_device(data_batch, self.runner.device)
-            self.run_iter(idx, data_batch)
+            self.run_iter(idx, data_batch)  
 
         # compute metrics
-        metrics = None
+        metrics = {}
         if self.evaluator is not None:
-            metrics = self.evaluator.evaluate(len(self.dataloader.dataset))
+            metrics = self.evaluator.evaluate(len(self.dataloader.dataset)) # type: ignore
 
         self.runner.after_test()
 
         return metrics
+    
 
     @torch.no_grad()
-    def run_iter(self, idx, data_batch: Sequence[dict]) -> None:
+    def run_iter(self, idx, data_batch: dict[str, Sequence]) -> None:
         """Iterate one mini-batch.
 
         Args:

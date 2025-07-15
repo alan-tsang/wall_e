@@ -11,7 +11,7 @@ try:
     import pynvml
 except ImportError:
     HAS_PYNVML = False
-    warnings.warn("pynvml is not installed. GPU memory usage will be unavailable.")
+    # warnings.warn("pynvml is not installed. GPU memory usage will be unavailable.")
 else:
     HAS_PYNVML = True
 
@@ -19,7 +19,7 @@ try:
     import sklearn
 except ImportError:
     HAS_SKLEARN = False
-    warnings.warn("sklearn is not installed. KFold will be unavailable.")
+    # warnings.warn("sklearn is not installed. KFold will be unavailable.")
 else:
     HAS_SKLEARN = True
 

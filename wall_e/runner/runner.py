@@ -8,6 +8,7 @@ from typing import List, Optional, Union
 
 import torch
 import torch.distributed as dist
+from torch.utils.data import DataLoader
 from omegaconf import omegaconf, OmegaConf
 from torch.utils.data.distributed import DistributedSampler
 
@@ -21,7 +22,9 @@ from ..common.registry import registry
 from ..common.util import better_dict_4_print
 from ..dist.init import is_main_process
 from ..logging.logger import Logger
-
+from .loop.train_loop import TrainLoop
+from .loop.valid_loop import ValidLoop
+from .loop.test_loop import TestLoop
 
 
 class Runner(RunnerBase):
@@ -51,18 +54,18 @@ class Runner(RunnerBase):
     def __init__(
             self,
             model: BaseModel,
-            train_data_loader: torch.utils.data.DataLoader,
-            valid_data_loader: torch.utils.data.DataLoader = None,
-            test_data_loader: torch.utils.data.DataLoader = None,
-            train_loop = None,
-            valid_loop = None,
-            test_loop = None,
-            train_evaluator: Evaluator = None,
-            valid_evaluator: Evaluator = None,
-            test_evaluator: Evaluator = None,
-            epochs: int = None,
+            train_data_loader: DataLoader,
+            epochs: int,
+            valid_data_loader: DataLoader | None = None,
+            test_data_loader: DataLoader | None = None,
+            train_loop: TrainLoop | None = None,
+            valid_loop: ValidLoop | None = None,
+            test_loop: TestLoop | None = None,
+            train_evaluator: Evaluator | None = None,
+            valid_evaluator: Evaluator | None = None,
+            test_evaluator: Evaluator | None = None,
             optimizer: Optional[torch.optim.Optimizer] = None,
-            cfg: Union[dict, omegaconf.DictConfig] = None,
+            cfg: Union[dict, omegaconf.DictConfig] | None = None,
 
             *args,
             **kwargs,
@@ -103,7 +106,7 @@ class Runner(RunnerBase):
         self.epochs = epochs
         # NOTE: 启用deepspeed时，optimizer可以为空
         self.optimizer = optimizer
-        self.cfg = cfg
+        self.cfg = OmegaConf.create(cfg or {})
 
         self.state = RunnerState(self)
         registry.register("cfg", cfg)
@@ -120,6 +123,8 @@ class Runner(RunnerBase):
         5. 设置回调函数
         6. 设置评估器
         """
+        # NOTE: train_loop会注入scheduler
+        self.scheduler = None
         self.setup_launch_strategy()
         self.logger = self.setup_logger()
         self.setup_model_optimizer()
@@ -157,7 +162,7 @@ class Runner(RunnerBase):
         try:
             self.before_fit()
             # valid_loop、test_loop 服务于train_loop，被内置管理
-            self.train_loop.run()
+            self.train()
         except BaseException as e:
             # 获取完整的异常堆栈信息
             error_trace = traceback.format_exc()
@@ -172,13 +177,19 @@ class Runner(RunnerBase):
             self.after_fit()
 
     def train(self):
+        if self.train_loop is None:
+            raise ValueError("未设置训练循环过程")
         self.train_loop.run()
 
     def valid(self):
+        if self.valid_loop is None:
+            raise ValueError("未设置验证循环过程")
         self.logger.info("开始验证...")
         self.valid_loop.run()
 
     def test(self):
+        if self.test_loop is None:
+            raise ValueError("未设置测试循环过程")
         self.logger.info("开始测试...")
         return self.test_loop.run()
 
@@ -339,7 +350,7 @@ class Runner(RunnerBase):
                 self.model, self.optimizer, _, _ = deepspeed.initialize(
                     model = self.model,
                     optimizer = self.optimizer,
-                    model_parameters = self.model.parameters(),
+                    model_parameters = self.model.parameters(), # type: ignore
                     config = self.state.ds_config,
                 )
                 self.state.start_msg = "使用deepspeed启动中..."
@@ -449,7 +460,7 @@ class Runner(RunnerBase):
                 rank = dist.get_rank(),
                 shuffle = shuffle
             )
-            return torch.utils.data.DataLoader(
+            return DataLoader(
                 data_loader.dataset,
                 batch_size = data_loader.batch_size,
                 sampler = sampler,

@@ -7,10 +7,9 @@ import contextlib
 
 from .base_loop import BaseLoop
 from ..util import move_data_to_device
-from ... import Runner, registry
 from ...logging import print_log
 from ...util.dl_util import get_batch_n
-
+from ...common.registry import registry
 
 class TrainLoop(BaseLoop):
     """Loop for epoch-based training.
@@ -24,7 +23,7 @@ class TrainLoop(BaseLoop):
 
     def __init__(
             self,
-            runner: Runner,
+            runner: 'Runner',
             dataloader: Union[DataLoader, Dict],
             max_epochs: int,
             valid_begin_epoch,
@@ -52,11 +51,14 @@ class TrainLoop(BaseLoop):
         self.test_interval_epoch = test_interval_epoch
         self.test_begin_iter = test_begin_iter
         self.test_interval_iter = test_interval_iter
+        
+        self.cfg = self.runner.cfg
         # This attribute will be updated by `EarlyStopCallBack`
         # when it is enabled.
 
         self.scheduler = self.setup_scheduler()
         self.runner.scheduler = self.scheduler
+        
 
         self.__post_init__()
 
@@ -145,7 +147,7 @@ class TrainLoop(BaseLoop):
             data_batch = move_data_to_device(data_batch, self.runner.state.device)
             with self.maybe_autocast(self.is_16bit):
                 self.runner.state.current_step = self._iter + 1
-                self.run_iter(idx, data_batch)
+                self.run_iter(idx, data_batch) # type: ignore
 
             if (self.runner.valid_loop is not None
                     and self._iter >= self.valid_begin_iter
@@ -167,7 +169,7 @@ class TrainLoop(BaseLoop):
         self._epoch += 1
 
 
-    def run_iter(self, idx, data_batch: Sequence[dict]) -> None:
+    def run_iter(self, idx, data_batch: dict[str, Sequence]) -> None:
         """Iterate one min-batch.
 
         Args:
@@ -192,7 +194,7 @@ class TrainLoop(BaseLoop):
         registry.register("metric.loss", model_output["loss"].item())
         import ray
         if registry.get("cfg.training.is_sweep", False):
-            ray.train.report(metrics = {"loss": model_output["loss"].item()})
+            ray.train.report(metrics = {"loss": model_output["loss"].item()}) # type: ignore
 
 
     def setup_scheduler(self):
@@ -248,21 +250,24 @@ class TrainLoop(BaseLoop):
             scaler.step(self.runner.optimizer)
             scaler.update()
         else:
-            self.runner.optimizer.step()
+            if self.runner.optimizer is not None:
+                self.runner.optimizer.step()
 
         if self.scheduler is not None:
             self.scheduler.step(self.runner.state.current_step)
-
-        self.runner.optimizer.zero_grad()
+        if self.runner.optimizer is not None:
+            self.runner.optimizer.zero_grad()
         self.runner.state.accumulation_count = 0
 
 
     def resume(self):
         """
-        跳过data_loader可能很耗时
+        跳过data_loader可能很耗时, 因此保守实现：恢复epoch，随机数，优化器，model，cfg
         """
+        if self.runner.checkpoint_callback is None:
+            raise RuntimeError("未设置checkpoint callback，无法复原训练状态！")
         start_epoch, start_batch = self.runner.checkpoint_callback \
-            .load_checkpoint(self.runner.state.resume_from)
+            .load_checkpoint(self.runner.state.resume_from) # type: ignore
         self._epoch = start_epoch
         self.runner.state.current_epoch = self._epoch
         # self._iter = start_batch
