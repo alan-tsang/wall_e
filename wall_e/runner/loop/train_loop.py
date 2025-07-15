@@ -66,22 +66,22 @@ class TrainLoop(BaseLoop):
         self.scaler = torch.cuda.amp.GradScaler() if self.is_16bit else None
 
     @property
-    def max_epochs(self):
+    def max_epochs(self) -> int:
         """int: Total epochs to train model."""
         return self._max_epochs
 
     @property
-    def max_iters(self):
+    def max_iters(self) -> int:
         """int: Total iterations to train model."""
         return self._max_iters
 
     @property
-    def epoch(self):
+    def epoch(self) -> int:
         """int: Current epoch."""
         return self._epoch
 
     @property
-    def iter(self):
+    def iter(self) -> int:
         """int: Current iteration."""
         return self._iter
 
@@ -135,7 +135,7 @@ class TrainLoop(BaseLoop):
         self.runner.after_train()
         return self.runner.model
 
-    def run_epoch(self) -> None:
+    def run_epoch(self):
         """Iterate one epoch."""
         self.runner.before_running_epoch()
         self.runner.model.train()

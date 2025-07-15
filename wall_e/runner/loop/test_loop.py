@@ -55,7 +55,7 @@ class TestLoop(BaseLoop):
     
 
     @torch.no_grad()
-    def run_iter(self, idx, data_batch: dict[str, Sequence]) -> None:
+    def run_iter(self, idx, data_batch: dict[str, Sequence]):
         """Iterate one mini-batch.
 
         Args:

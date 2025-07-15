@@ -25,7 +25,7 @@ class WandbCallback(BaseCallBack):
 
     def after_running_batch(self):
         if wandb.run is not None:
-            metrics = registry.get("metric")
+            metrics: dict = registry.get("metric")
             if metrics is not None:
                 for key, value in metrics.items():
                     wandb.log({key: value})

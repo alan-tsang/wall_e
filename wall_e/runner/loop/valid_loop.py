@@ -45,7 +45,7 @@ class ValidLoop(BaseLoop):
             data_batch = move_data_to_device(data_batch, self.runner.device)
             self.run_iter(idx, data_batch)
 
-            # compute metrics
+        # compute metrics
         metrics = {}
         if self.evaluator is not None:
             metrics = self.evaluator.evaluate(len(self.dataloader.dataset))  # type: ignore

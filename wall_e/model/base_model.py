@@ -2,38 +2,40 @@ import inspect
 import logging
 import re
 import warnings
-from typing import Dict, List
+from typing import Dict, List, Any, Optional, Type, TypeVar, Union
 
 import numpy as np
 import torch
 import torch.nn as nn
 from abc import ABC, abstractmethod
+from matplotlib.figure import Figure
 
+T = TypeVar("T", bound="BaseModel")
 
 class BaseModel(nn.Module, ABC):
     """Base class for models."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         
     @abstractmethod
-    def train_step(self, *args, **kwargs) -> dict:
+    def train_step(self, *args: Any, **kwargs: Any) -> dict:
         pass
     
     @abstractmethod
-    def valid_step(self, *args, **kwargs) -> dict:
+    def valid_step(self, *args: Any, **kwargs: Any) -> dict:
         pass
     
     @abstractmethod
-    def test_step(self, *args, **kwargs) -> dict:
+    def test_step(self, *args: Any, **kwargs: Any) -> dict:
         pass
     
     @abstractmethod
-    def compute_loss(self, *args, **kwargs) -> dict:
+    def compute_loss(self, *args: Any, **kwargs: Any) -> dict:
         pass
 
 
-    def load_checkpoint(self, cached_path):
+    def load_checkpoint(self, cached_path: str) -> List[str]:
         """Load from a pretrained checkpoint.
         Maybe this should expect no mismatch in the model keys and the checkpoint keys.
         """
@@ -50,11 +52,11 @@ class BaseModel(nn.Module, ABC):
         logging.info("load checkpoint from %s" % cached_path)
         warnings.warn("Missing keys {}".format(msg.missing_keys))
 
-        return msg
+        return msg.missing_keys
 
 
     @classmethod
-    def from_cfg(cls, cfg):
+    def from_cfg(cls: Type[T], cfg: Any) -> T:
 
         """根据配置文件动态构建模型，支持以下功能：
         - 自动匹配子类构造器（当继承BaseModel时）
@@ -109,9 +111,9 @@ class BaseModel(nn.Module, ABC):
         if 'pretrained' in config_dict:
             load_result = model.load_checkpoint(config_dict['pretrained'])
             # 检查权重加载（根据需求调整）
-            if len(load_result.missing_keys) > 0 and not config_dict.get('allow_missing_keys', False):
+            if len(load_result) > 0 and not config_dict.get('allow_missing_keys', False):
                 import warnings
-                warnings.warn(f"Missing keys in checkpoint: {load_result.missing_keys}")
+                warnings.warn(f"Missing keys in checkpoint: {load_result}")
 
         # 设备分配（优先使用配置文件指定设备）
         device = config_dict.get('device', 'cuda' if torch.cuda.is_available() else 'cpu')
@@ -122,7 +124,7 @@ class BaseModel(nn.Module, ABC):
         return model
 
 
-    def freeze_parameters(self, freeze = True, regex = None):
+    def freeze_parameters(self, freeze: bool = True, regex: Optional[str] = None) -> "BaseModel":
         """参数冻结控制
         Args:
             freeze (bool): 冻结/解冻
@@ -131,7 +133,7 @@ class BaseModel(nn.Module, ABC):
             >>> model.freeze_parameters(regex="^embeddings")
         """
 
-        def _match(name):
+        def _match(name: str) -> bool:
             return re.fullmatch(regex, name) if regex else True
 
         for name, param in self.named_parameters():
@@ -140,9 +142,11 @@ class BaseModel(nn.Module, ABC):
         return self
 
 
-    def visualize_architecture(self,
-                               input,
-                               save_path: str = "model_graph.png"):
+    def visualize_architecture(
+            self,
+            input: dict,
+            save_path: str = "model_graph.png"       
+        ) -> str:
         """可视化模型计算图（需要安装torchviz）"""
         try:
             from torchviz import make_dot
@@ -152,10 +156,10 @@ class BaseModel(nn.Module, ABC):
         output = self(**input)
         graph = make_dot(output, params = dict(self.named_parameters()))
         graph.render(save_path, format = 'png', cleanup = True)
-        print(f"Graph saved to {save_path}")
+        return save_path
 
 
-    def plot_parameter_histogram(self, param_name: str, bins: int = 50):
+    def plot_parameter_histogram(self, param_name: str, bins: int = 50) -> Figure:
         from matplotlib import pyplot as plt
         """绘制参数分布直方图"""
         param = dict(self.named_parameters())[param_name]
@@ -169,9 +173,9 @@ class BaseModel(nn.Module, ABC):
         return fig
 
 
-    def detect_parameter_outliers(self, sigma = 3) -> List[Dict]:
+    def detect_parameter_outliers(self, sigma: float = 3) -> List[Dict[str, Any]]:
         """检测参数异常值（基于3σ原则）"""
-        outliers = []
+        outliers: List[Dict[str, Any]] = []
         for name, param in self.named_parameters():
             data = param.detach().cpu().numpy().flatten()
             mean, std = np.mean(data), np.std(data)
@@ -193,18 +197,18 @@ class BaseModel(nn.Module, ABC):
 
 
     @property
-    def device(self):
+    def device(self) -> torch.device:
         return list(self.parameters())[0].device
 
     @property
-    def dtype(self):
+    def dtype(self) -> torch.dtype:
         return next(self.parameters()).dtype
 
     @property
-    def num_parameters(self):
+    def num_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters())
 
     @property
-    def num_trainable_parameters(self):
+    def num_trainable_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
