@@ -54,18 +54,18 @@ class Runner(RunnerBase):
     def __init__(
             self,
             model: BaseModel,
-            train_data_loader: DataLoader,
-            epochs: int,
-            valid_data_loader: DataLoader | None = None,
-            test_data_loader: DataLoader | None = None,
-            train_loop: TrainLoop | None = None,
-            valid_loop: ValidLoop | None = None,
-            test_loop: TestLoop | None = None,
-            train_evaluator: Evaluator | None = None,
-            valid_evaluator: Evaluator | None = None,
-            test_evaluator: Evaluator | None = None,
+            epochs: Optional[int] = None,
+            train_data_loader: Optional[DataLoader] = None,
+            valid_data_loader: Optional[DataLoader] = None,
+            test_data_loader: Optional[DataLoader] = None,
+            train_loop: Optional[TrainLoop] = None,
+            valid_loop: Optional[ValidLoop] = None,
+            test_loop: Optional[TestLoop] = None,
+            train_evaluator: Optional[Evaluator] = None,
+            valid_evaluator: Optional[Evaluator] = None,
+            test_evaluator: Optional[Evaluator] = None,
             optimizer: Optional[torch.optim.Optimizer] = None,
-            cfg: Union[dict, omegaconf.DictConfig] | None = None,
+            cfg: Optional[Union[dict, omegaconf.DictConfig]] = None,
 
             *args,
             **kwargs,
@@ -178,18 +178,18 @@ class Runner(RunnerBase):
 
     def train(self):
         if self.train_loop is None:
-            raise ValueError("未设置训练循环过程")
+            raise ValueError("未设置训练循环过程, 请检查是否提供了训练数据")
         self.train_loop.run()
 
     def valid(self):
         if self.valid_loop is None:
-            raise ValueError("未设置验证循环过程")
+            raise ValueError("未设置验证循环过程, 请检查是否提供了验证数据")
         self.logger.info("开始验证...")
         self.valid_loop.run()
 
     def test(self):
         if self.test_loop is None:
-            raise ValueError("未设置测试循环过程")
+            raise ValueError("未设置测试循环过程, 请检查是否提供了测试数据")
         self.logger.info("开始测试...")
         return self.test_loop.run()
 

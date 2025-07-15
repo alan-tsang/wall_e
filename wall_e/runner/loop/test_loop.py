@@ -22,7 +22,7 @@ class TestLoop(BaseLoop):
     def __init__(self,
                  runner,
                  dataloader: DataLoader,
-                 evaluator: Evaluator | None = None,
+                 evaluator: Optional[Evaluator],
                  shuffle = False,
                  fp16: bool = False
                  ):

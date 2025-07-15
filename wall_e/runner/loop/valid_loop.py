@@ -23,7 +23,7 @@ class ValidLoop(BaseLoop):
     def __init__(self,
                  runner,
                  dataloader: Union[DataLoader, Dict],
-                 evaluator: Evaluator | None = None,
+                 evaluator: Optional[Evaluator] = None,
                  shuffle = False,
                  fp16: bool = False
                  ):

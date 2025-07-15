@@ -1,6 +1,7 @@
 """
 adapted from https://github.com/salesforce/LAVIS/blob/main/lavis/common/registry.py
 """
+from typing import Optional
 from ..model import BaseModel
 
 class Registry:
@@ -228,7 +229,7 @@ class Registry:
 
 
     @classmethod
-    def get_model_class(cls, name) -> BaseModel | None:
+    def get_model_class(cls, name) -> Optional[BaseModel]:
         return cls.mapping["model_name_mapping"].get(name, None)
 
     @classmethod
