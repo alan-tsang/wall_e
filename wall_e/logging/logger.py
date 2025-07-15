@@ -4,6 +4,7 @@ import logging
 from typing import Optional
 
 import torch
+import torch.distributed as dist
 
 from ..dist import master_only
 from ..dist import is_main_process, get_rank
@@ -21,7 +22,7 @@ class LoggerFormatter(logging.Formatter):
     def format(self, record):
         # 添加进程排名信息到日志记录
         if not hasattr(record, 'rank'):
-            record.rank = get_rank() if torch.distributed.is_initialized() else 0
+            record.rank = get_rank() if dist.is_initialized() else 0
         return super().format(record)
 
 
@@ -100,13 +101,13 @@ class Logger(ManagerMixin):
         else:
             file_path = None
 
-        if torch.distributed.is_initialized():
+        if dist.is_initialized():
             file_path_list = [file_path]
-            torch.distributed.broadcast_object_list(file_path_list, src = 0)
+            dist.broadcast_object_list(file_path_list, src = 0)
             file_path = file_path_list[0]
 
         # 配置文件处理器 - 所有进程使用相同的文件路径
-        file_handler = logging.FileHandler(file_path)
+        file_handler = logging.FileHandler(file_path) #type: ignore
         file_handler.setFormatter(LoggerFormatter(datefmt = "%Y-%m-%d %H:%M:%S"))
         self.logger.addHandler(file_handler)
 
@@ -121,23 +122,23 @@ class Logger(ManagerMixin):
         if self.logger.isEnabledFor(log_level):
             self.logger.log(log_level, text, stacklevel = 3)
 
-    def debug(self, obj: any) -> None:
+    def debug(self, obj: object) -> None:
         self.log(str(obj), "DEBUG")
 
-    def info(self, obj: any) -> None:
+    def info(self, obj: object) -> None:
         self.log(str(obj), "INFO")
 
-    def warning(self, obj: any) -> None:
+    def warning(self, obj: object) -> None:
         self.log(str(obj), "WARNING")
 
-    def error(self, obj: any) -> None:
+    def error(self, obj: object) -> None:
         self.log(str(obj), "ERROR")
 
-    def critical(self, obj: any) -> None:
+    def critical(self, obj: object) -> None:
         self.log(str(obj), "CRITICAL")
 
     @master_only
-    def just_print(self, obj: any, end: str = "\n", time_stamp = False, to_file: Optional[bool] = None) -> None:
+    def just_print(self, obj: object, end: str = "\n", time_stamp = False, to_file: Optional[bool] = None) -> None:
         if time_stamp:
             obj = f"[{now()}] {obj}"
         print(obj, end=end, flush=True)

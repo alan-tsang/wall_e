@@ -7,6 +7,7 @@ import traceback
 from typing import List, Optional, Union
 
 import torch
+from torch import nn
 import torch.distributed as dist
 from torch.utils.data import DataLoader
 from omegaconf import omegaconf, OmegaConf
@@ -176,22 +177,25 @@ class Runner(RunnerBase):
         finally:
             self.after_fit()
 
-    def train(self):
+    def train(self) -> nn.Module:
         if self.train_loop is None:
             raise ValueError("未设置训练循环过程, 请检查是否提供了训练数据")
-        self.train_loop.run()
+        trained_model = self.train_loop.run()
+        return trained_model
 
-    def valid(self):
+    def valid(self) -> dict:
         if self.valid_loop is None:
             raise ValueError("未设置验证循环过程, 请检查是否提供了验证数据")
         self.logger.info("开始验证...")
-        self.valid_loop.run()
+        metrics = self.valid_loop.run()
+        return metrics
 
-    def test(self):
+    def test(self) -> dict:
         if self.test_loop is None:
             raise ValueError("未设置测试循环过程, 请检查是否提供了测试数据")
         self.logger.info("开始测试...")
-        return self.test_loop.run()
+        metrics = self.test_loop.run()
+        return metrics
 
     def before_fit(self):
         super().before_fit()
@@ -231,12 +235,14 @@ class Runner(RunnerBase):
         - TestLoop: 处理测试逻辑
         """
         if self.train_loop is None and self.train_data_loader is not None:
+            assert isinstance(self.epochs, int) and self.epochs > 0, "非法的epoch设置"
+            
             from .loop.train_loop import TrainLoop
             train_loop_cfg = self.cfg.training
             self.train_loop = TrainLoop(
                 runner = self,
                 dataloader = self.train_data_loader,
-                max_epochs = self.epochs,
+                max_epochs = self.epochs, # type: ignore
                 valid_begin_epoch = train_loop_cfg.get("valid_begin_epoch", 1),
                 valid_interval_epoch = train_loop_cfg.get("valid_interval_epoch", 1),
                 valid_begin_iter = train_loop_cfg.get("valid_begin_iter", 4000),
@@ -440,7 +446,7 @@ class Runner(RunnerBase):
             self.test_evaluator.setup_state(self.state)
 
     @staticmethod
-    def wrap_dataloader(data_loader, shuffle):
+    def wrap_dataloader(data_loader, shuffle) -> DataLoader:
         """
         在分布式训练中，使用DistributedSampler来确保不同进程处理不同的数据子集,
         包装数据加载器以支持分布式训练;

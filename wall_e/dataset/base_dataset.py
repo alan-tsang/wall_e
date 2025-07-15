@@ -6,7 +6,7 @@ import json
 import os.path
 import types
 import warnings
-from typing import Union, Optional, Callable, List, Dict
+from typing import Union, Optional, Callable, List, Dict, Sequence
 from datasets import Dataset, DatasetDict, IterableDataset
 from torch.utils.data import DataLoader
 from abc import ABC, abstractmethod
@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 class BaseDataset(ABC):
     def __init__(
         self,
-        data_source: Union[str, Dataset, DatasetDict],
+        data_source: Union[Sequence, str, Dataset, DatasetDict],
         metadata: Optional[Dict] = None,
         *args,
         **kwargs

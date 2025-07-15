@@ -35,7 +35,8 @@ dependencies = [
     "ray",
     "transformers",
     "rdkit",
-    "wandb"
+    "wandb",
+    "matplotlib"
 ]
 
 [project.optional-dependencies]

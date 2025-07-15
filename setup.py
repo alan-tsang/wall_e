@@ -19,7 +19,8 @@ setup(
         "ray",
         "transformers",
         "rdkit",
-        "wandb"
+        "wandb",
+        "matplotlib"
     ],
     extras_require = {
         "deepspeed": ["deepspeed"],
