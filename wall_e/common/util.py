@@ -2,10 +2,101 @@ import warnings
 from functools import wraps
 
 from packaging.version import parse
-
 import warnings
 
 _warning_cache = set()  # 全局缓存已触发警告的消息
+
+import functools
+import time
+from typing import Optional, Callable, Any
+
+def timeit(
+    func: Optional[Callable] = None, 
+    *,
+    repeats: int = 1,
+    warmup: int = 0,
+    prefix: str = "",
+    verbose: bool = True,
+    return_time: bool = False
+) -> Callable:
+    """
+    函数执行时间测量装饰器
+    
+    参数:
+        repeats: 重复执行次数 (默认: 1)
+        warmup: 预热次数 (不计算时间，默认: 0)
+        prefix: 输出信息前缀 (默认: "")
+        verbose: 是否打印时间信息 (默认: True)
+        return_time: 是否返回执行时间 (默认: False)
+    
+    使用示例:
+        1. 基本用法: 
+            @timeit
+            def my_func():
+                ...
+                
+        2. 带参数:
+            @timeit(repeats=5, warmup=1, prefix="[Benchmark]")
+            def my_func():
+                ...
+                
+        3. 获取执行时间:
+            result, exec_time = my_func(return_time=True)
+    """
+    if func is None:
+        return functools.partial(
+            timeit, 
+            repeats=repeats,
+            warmup=warmup,
+            prefix=prefix,
+            verbose=verbose,
+            return_time=return_time
+        )
+    
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs) -> Any:
+        # 处理嵌套的 return_time 请求
+        return_time_flag = kwargs.pop('return_time', False) or return_time
+        
+        # 预热运行 (不计算时间)
+        for _ in range(warmup):
+            func(*args, **kwargs)
+        
+        # 实际计时运行
+        start_time = time.perf_counter()
+        for _ in range(repeats):
+            result = func(*args, **kwargs)
+        end_time = time.perf_counter()
+        
+        # 计算执行时间
+        total_time = end_time - start_time
+        avg_time = total_time / repeats
+        
+        # 打印结果
+        if verbose:
+            time_unit = "ms"
+            scale = 1000
+            
+            if avg_time < 0.001:
+                time_unit = "μs"
+                scale = 1000000
+            elif avg_time > 1:
+                time_unit = "s"
+                scale = 1
+            
+            msg = (f"{prefix}[Timeit] {func.__name__} - "
+                   f"{repeats} runs, {warmup} warmup: "
+                   f"avg {avg_time * scale:.4f} {time_unit} "
+                   f"| total {total_time * scale:.4f} {time_unit}")
+            from ..logging.util import print_log
+            print(msg)
+        
+        # 返回结果
+        if return_time_flag:
+            return result, (avg_time, total_time)
+        return result
+    
+    return wrapper
 
 
 def better_dict_4_print(_dict):

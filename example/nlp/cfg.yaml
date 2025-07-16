@@ -57,12 +57,12 @@ training:
   valid_begin_epoch: 2
   valid_interval_epoch: 1
   valid_begin_iter: 10
-  valid_interval_iter: 5
+  valid_interval_iter: 6
 
   test_begin_epoch: 3
   test_interval_epoch: 1
   test_begin_iter: 60
-  test_interval_iter: 5
+  test_interval_iter: 6
 
   progress_every_n_epochs: 1
   progress_every_n_batches: 1

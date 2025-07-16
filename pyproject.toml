@@ -26,7 +26,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "torch>=1.11.0",
+    "torch>=2.3.0",
     "datasets",
     "omegaconf>=1.4.0",
     "numpy",

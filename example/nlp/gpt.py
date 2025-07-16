@@ -104,27 +104,34 @@ class DemoNet(BaseModel):
         self.logit_generator = logit_generator
         self.criterion = nn.CrossEntropyLoss()
 
-    def forward(self, input_ids, label, mask = None, *args, **kwargs):
+    def forward(self, input_ids, mask = None, *args, **kwargs):
         out_prob, past_key_values = self.transformer(input_ids, mask = mask)
         logit = self.logit_generator(out_prob)
-        loss = self.criterion(logit.view(-1, logit.size(-1)), label.view(-1))
-        return dict(
-            logit = logit,
-            loss = loss
-        )
+        
+        return dict(logit = logit, past_key_values = past_key_values)
 
-    def train_step(self, *args, **kwargs):
-        return self.forward(*args, **kwargs)
+    def train_step(self, data_batch):
+        input_ids = data_batch["input_ids"]
+        mask = data_batch["mask"]
+        label = data_batch["label"]
+        outputs = self.forward(input_ids, mask)
+        loss_output = self.compute_loss(outputs["logit"], label)
+        return outputs | loss_output
 
     def valid_step(self, *args, **kwargs):
-        return self.forward(*args, **kwargs)
+        return self.train_step(*args, **kwargs)
 
-    def test_step(self, input_ids, **kargs):
+    def test_step(self, data_batch, **kargs):
+        input_ids = data_batch["input_ids"]
         return self.transformer.generate(
             input_ids,
             generator = self.logit_generator,
             max_length = cfg.data.max_len
         )
+    
+    def compute_loss(self, logit, label) -> dict:
+        loss = self.criterion(logit.view(-1, logit.size(-1)), label.view(-1))
+        return dict(loss = loss)
 
 
 class ValidMetric(BaseMetric):

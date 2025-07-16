@@ -126,7 +126,7 @@ class TransformerForClassification(BaseModel):
         return sum_embeddings / sum_mask
 
 @registry.register_model("TransformerForCausalLLM")
-class TransformerForCausalLLM(BaseModel):
+class TransformerForCausalLLM(nn.Module):
     def __init__(
         self,
         vocab_n,
