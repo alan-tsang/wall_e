@@ -31,18 +31,15 @@ class TestLoop(BaseLoop):
         self.evaluator = evaluator  # type: ignore
         self.fp16 = fp16
 
-    def before_test(self):
-        self.dataloader = self.runner.wrap_dataloader(self.dataloader)
 
     def run(self) -> dict:
         """Launch test."""
         self.runner.before_test()
         self.runner.model.eval()
-        self.before_test()
 
         for idx, data_batch in enumerate(self.dataloader):
             data_batch = move_data_to_device(data_batch, self.runner.device)
-            self.run_iter(idx, data_batch)  
+            self.run_iter(idx, data_batch)
 
         # compute metrics
         metrics = {}

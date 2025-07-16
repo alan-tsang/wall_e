@@ -41,6 +41,7 @@ class TrainLoop(BaseLoop):
         assert self._max_epochs == max_epochs, \
             f'`max_epochs` should be a integer number, but get {max_epochs}.'
         self._max_iters = self._max_epochs * len(self.dataloader)
+        self._iters_per_epoch = len(self.dataloader)
         self._epoch = 0
         self._iter = 0
         self.valid_begin_epoch = valid_begin_epoch
@@ -101,7 +102,6 @@ class TrainLoop(BaseLoop):
         return OmegaConf.select(self.runner.cfg, "training.grad_clip", default = None)
 
     def prepare_run(self):
-        self.dataloader = self.runner.wrap_dataloader(self.dataloader)
         if self.runner.state.resume_from:
             self.resume()
         # 在runner的setup_model，处理了
@@ -120,16 +120,16 @@ class TrainLoop(BaseLoop):
 
             if (self.runner.valid_loop is not None
                     and self._epoch >= self.valid_begin_epoch
-                    and (self._epoch % self.valid_interval_epoch == 0
+                    and ((self._epoch - self.valid_interval_epoch)  % self.valid_interval_epoch == 0
                          or self._epoch == self._max_epochs)):
-                self.runner.logger.info(f"valid at epoch: {self._epoch}...")
+                self.runner.logger.info(f"验证 at epoch: {self._epoch}...")
                 self.runner.valid_loop.run()
 
             if (self.runner.test_loop is not None
                     and self._epoch >= self.test_begin_epoch
-                    and (self._epoch % self.test_interval_epoch == 0
+                    and ((self._epoch - self.test_interval_epoch) % self.test_interval_epoch == 0
                          or self._epoch == self._max_epochs)):
-                self.runner.logger.info(f"test at epoch: {self._epoch}...")
+                self.runner.logger.info(f"测试 at epoch: {self._epoch}...")
                 self.runner.test_loop.run()
 
         self.runner.after_train()
@@ -148,22 +148,23 @@ class TrainLoop(BaseLoop):
             with self.maybe_autocast(self.is_16bit):
                 self.runner.state.current_step = self._iter + 1
                 self.run_iter(idx, data_batch) # type: ignore
-
+            self._iter += 1
+            
+            iter_now = self._iter + self._epoch * self._iters_per_epoch
             if (self.runner.valid_loop is not None
-                    and self._iter >= self.valid_begin_iter
-                    and (self._iter % self.valid_interval_iter == 0
-                         or self._iter == self._max_iters)):
-                self.runner.logger.info(f"valid at iter: {self._iter}...")
+                    and iter_now >= self.valid_begin_iter
+                    and ((iter_now - self.valid_begin_iter)  % self.valid_interval_iter == 0
+                         or iter_now == self._max_iters)):
+                self.runner.logger.info(f"验证 at iter: {iter_now}...")
                 self.runner.valid_loop.run()
 
             if (self.runner.test_loop is not None
-                    and self._iter >= self.test_begin_iter
-                    and (self._iter % self.test_interval_iter == 0
-                         or self._iter == self._max_iters)):
-                self.runner.logger.info(f"test at iter: {self._iter}...")
+                    and iter_now >= self.test_begin_iter
+                    and ((iter_now - self.test_begin_iter) % self.test_interval_iter == 0
+                         or iter_now == self._max_iters)):
+                self.runner.logger.info(f"测试 at iter: {iter_now}...")
                 self.runner.test_loop.run()
 
-            self._iter += 1
 
         self.runner.after_running_epoch()
         self._epoch += 1
@@ -183,18 +184,34 @@ class TrainLoop(BaseLoop):
         else:
             model_output = self.runner.model.train_step(data_batch)
         assert "loss" in model_output, "模型输出必须返回包含loss的字典"
-        self.backward(self.scaler, model_output["loss"])
-        self.register_model_output(model_output)
+
+        skip_batch = torch.isnan(model_output["loss"]).any().item()
+
+        # 分布式环境下同步跳过的决策
+        if torch.distributed.is_initialized():
+            skip_batch_tensor = torch.tensor([skip_batch], device=self.runner.device)
+            torch.distributed.all_reduce(skip_batch_tensor, op=torch.distributed.ReduceOp.MAX)
+            skip_batch = skip_batch_tensor.item()
+
+        if skip_batch:
+            self.runner.logger.error("该批次检测到NaN，所有进程跳过该batch")
+        else:
+            self.backward(self.scaler, model_output["loss"])
+            self.register_model_output(model_output)
 
         self.runner.after_running_batch()
 
 
     @staticmethod
     def register_model_output(model_output):
-        registry.register("metric.loss", model_output["loss"].item())
-        import ray
-        if registry.get("cfg.training.is_sweep", False):
-            ray.train.report(metrics = {"loss": model_output["loss"].item()}) # type: ignore
+        # 注册并报告所有包含"loss"的键值
+        for key, value in model_output.items():
+            if "loss" in key and isinstance(value, torch.Tensor):
+                registry.register(f"metric.{key}", value.item())
+                
+                if registry.get("cfg.training.is_sweep", False):
+                    import ray
+                    ray.train.report(metrics={key: value.item()}) # type: ignore
 
 
     def setup_scheduler(self):

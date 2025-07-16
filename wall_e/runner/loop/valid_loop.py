@@ -32,14 +32,10 @@ class ValidLoop(BaseLoop):
         self.evaluator = evaluator  # type: ignore
         self.fp16 = fp16
 
-    def before_valid(self):
-        self.dataloader = self.runner.wrap_dataloader(self.dataloader)
-
     def run(self) -> dict:
         """Launch validation."""
         self.runner.before_valid()
         self.runner.model.eval()
-        self.before_valid()
 
         for idx, data_batch in enumerate(self.dataloader):
             data_batch = move_data_to_device(data_batch, self.runner.device)
