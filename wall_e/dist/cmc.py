@@ -64,7 +64,7 @@ def all_reduce(data: Tensor,
 
     Examples:
         >>> import torch
-        >>> import zero2hero.dist as dist
+        >>> import wall_e.dist as dist
 
         >>> # non-distributed environment
         >>> data = torch.arange(2, dtype=torch.int64)
@@ -135,7 +135,7 @@ def all_gather(data: Tensor,
 
     Examples:
         >>> import torch
-        >>> import zero2hero.dist as dist
+        >>> import wall_e.dist as dist
 
         >>> # non-distributed environment
         >>> data = torch.arange(2, dtype=torch.int64)
@@ -212,7 +212,7 @@ def gather(data: Tensor,
 
     Examples:
         >>> import torch
-        >>> import zero2hero.dist as dist
+        >>> import wall_e.dist as dist
 
         >>> # non-distributed environment
         >>> data = torch.arange(2, dtype=torch.int64)
@@ -279,7 +279,7 @@ def broadcast(data: Tensor,
 
     Examples:
         >>> import torch
-        >>> import zero2hero.dist as dist
+        >>> import wall_e.dist as dist
 
         >>> # non-distributed environment
         >>> data = torch.arange(2, dtype=torch.int64)
@@ -333,7 +333,7 @@ def sync_random_seed(group: Optional[ProcessGroup] = None) -> int:
 
     Examples:
         >>> import torch
-        >>> import zero2hero.dist as dist
+        >>> import wall_e.dist as dist
 
         >>> # non-distributed environment
         >>> seed = dist.sync_random_seed()
@@ -492,7 +492,7 @@ def broadcast_object_list(data: List[Any],
 
     Examples:
         >>> import torch
-        >>> import zero2hero.dist as dist
+        >>> import wall_e.dist as dist
 
         >>> # non-distributed environment
         >>> data = ['foo', 12, {1: 2}]
@@ -543,7 +543,7 @@ def all_reduce_dict(data: Dict[str, Tensor],
 
     Examples:
         >>> import torch
-        >>> import zero2hero.dist as dist
+        >>> import wall_e.dist as dist
 
         >>> # non-distributed environment
         >>> data = {
@@ -712,7 +712,7 @@ def all_gather_object(data: Any,
 
     Examples:
         >>> import torch
-        >>> import zero2hero.dist as dist
+        >>> import wall_e.dist as dist
 
         >>> # non-distributed environment
         >>> data = ['foo', 12, {1: 2}]  # any picklable object
@@ -869,7 +869,7 @@ def gather_object(data: Any,
 
     Examples:
         >>> import torch
-        >>> import zero2hero.dist as dist
+        >>> import wall_e.dist as dist
 
         >>> # non-distributed environment
         >>> data = ['foo', 12, {1: 2}]  # any picklable object
@@ -926,7 +926,7 @@ def collect_results(results: list,
     Examples:
         >>> # distributed environment
         >>> # We have 2 process groups, 2 ranks.
-        >>> import zero2hero.dist as dist
+        >>> import wall_e.dist as dist
         >>> if dist.get_rank() == 0:
                 data = ['foo', {1: 2}]
             else:
@@ -972,7 +972,7 @@ def collect_results_cpu(result_part: list,
     Examples:
         >>> # distributed environment
         >>> # We have 2 process groups, 2 ranks.
-        >>> import zero2hero.dist as dist
+        >>> import wall_e.dist as dist
         >>> if dist.get_rank() == 0:
                 data = ['foo', {1: 2}]
             else:
@@ -1087,7 +1087,7 @@ def collect_results_gpu(result_part: list, size: int) -> Optional[list]:
     Examples:
         >>> # distributed environment
         >>> # We have 2 process groups, 2 ranks.
-        >>> import zero2hero.dist as dist
+        >>> import wall_e.dist as dist
         >>> if dist.get_rank() == 0:
                 data = ['foo', {1: 2}]
             else:
@@ -1160,7 +1160,7 @@ def all_reduce_params(params: Union[List, Generator[torch.Tensor, None, None]],
 
     Examples:
         >>> import torch
-        >>> import zero2hero.dist as dist
+        >>> import wall_e.dist as dist
 
         >>> # non-distributed environment
         >>> data = [torch.arange(2), torch.arange(3)]

@@ -14,7 +14,7 @@ class ProcessCallBack(BaseCallBack):
     打印训练进度，以及train_monitor监控的值
     """
     def __init__(self, runner):
-        super(ProcessCallBack, self).__init__(runner)
+        super().__init__(runner)
 
         self.logger = runner.logger
         self.every_n_epoch = OmegaConf.select(

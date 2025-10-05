@@ -1,65 +1,84 @@
 # WALL_E
+
 <img src="https://image.tmdb.org/t/p/original/nYs4ZwnJBK4AgljhvzwNz7fpr3E.jpg" width="500"/>
 
-## 介绍
-WALL_E 是一个全面的轻量级深度学习框架，旨在简化模型开发、训练、评估和部署流程。它包含了多种模型架构、训练策略、评估指标以及分布式计算支持，并复现了一些基础模型
+---
 
-## 开发框架特性
-- 模块化设计：通过将系统分解为独立的组件，提高代码复用性和可维护性。
-- 生命周期管理：基于训练过程的不同阶段提供相应的回调机制。
-- 分布式训练支持：内置对分布式训练环境的初始化和通信支持。
-- 常用训练技巧支持：
-  - fp16/16bit
-  - activation_checkpoint
-  - gradient_accumulation
-  - grad_clip
-  - warmup & cosine decay
-  - deepspeed
-- 模型分析工具：提供FLOPs和激活函数的计数器来评估模型复杂度。
-- 注册模式：使用注册器来动态注册和获取模型、数据集、评估指标等。
-- 评估系统：灵活的评估器和指标系统，支持自定义指标。
-- 日志系统：支持多进程日志记录，主进程独占日志输出。
-- 训练监控与管理：支持训练过程中的日志记录、进度追踪、早停、模型检查点保存，自动上传至wandb等功能。
-- 调参与多实验：支持通过ray进行超参数调优和多实验管理。
-- 配置文件驱动：使用YAML配置文件来管理实验参数，支持命令行动态修改和加载。
+## 简介
 
-## 组件
+在深度学习项目开发中，开发者常常面临如下痛点：
+
+- **代码结构混乱**：模型、数据、训练流程高度耦合，难以维护和扩展。
+- **分布式训练复杂**：多机多卡环境下的初始化、同步、日志管理繁琐，容易出错。
+- **训练技巧集成难**：如混合精度、梯度累积、激活检查点等技巧手动集成成本高。
+- **实验管理低效**：超参数调优、实验追踪、结果复现缺乏统一方案。
+- **评估与监控分散**：评估指标、日志、进度、早停、模型保存等功能分散在各处，难以统一管理。
+
+**WALL_E** 针对上述痛点，提供了一个**轻量级、模块化、分布式友好**的深度学习开发框架，适用于科研场景。其目标是让你**专注于创新和业务逻辑**，而不是重复造轮子和调试底层细节。
+
+**适用人群：**
+- 需要快速搭建和迭代深度学习实验的科研人员和工程师
+- 希望在分布式环境下高效训练和管理模型的团队
+- 追求代码结构清晰、易于维护和扩展的开发者
+
+**核心价值：**
+- 让新手快速上手，专家高效定制
+- 让复杂训练流程一键集成，实验管理自动化
+- 让分布式和多进程训练像单机一样简单
+
+---
+
+## 核心特性
+- **模块化设计**：各组件解耦，便于扩展和复用。你可以像搭积木一样灵活组合模型、数据、训练、评估等模块。
+- **生命周期管理**：支持训练各阶段的回调机制，轻松插拔早停、进度、日志、Wandb等功能。
+- **分布式训练**：内置分布式环境初始化与通信，主进程、从进程日志集成输出，支持多种分布式后端。
+- **训练技巧**：支持16bit混合精度、激活检查点、梯度累积、梯度裁剪、学习率调度、deepspeed等主流训练技巧。
+- **模型分析**：FLOPs与激活计数，便于模型复杂度评估和优化。
+- **注册机制**：模型、数据集、指标等均可动态注册，方便扩展和自定义。
+- **灵活评估**：自定义评估器与指标体系，支持多任务和多指标评估。
+- **训练监控**：日志、进度、早停、检查点、自动上传，训练过程全方位可控。
+- **超参调优**：集成ray，支持多实验与自动调参，提升实验效率。
+- **YAML配置**：参数集中管理，支持命令行覆盖，实验可复现性强。
+
+---
+
+## 主要组件
 - **模型**
-  - Transformer模型：用于语言模型任务，包括编码器和解码器架构。
-  - 图神经网络（GNN）：包括GIN、GCN、GAT和GraphSAGE等图卷积层。
-  - EGNN：基于坐标的图神经网络。
-  - MoE（混合专家模型）：实现前馈网络的多专家架构。
-
+  - Transformer（编码器/解码器/LLM）
+  - 图神经网络（GIN、GCN、GAT、GraphSAGE、EGNN）
+  - MoE（混合专家）
 - **数据集**
-  - BaseDataset：抽象基类，定义了数据集的基本操作。
-  - MapDataset：适用于可随机访问的数据集。
-  - IterableDataset：适用于流式数据集。
-
+  - BaseDataset（抽象基类，统一数据接口）
+  - MapDataset（适用于可随机访问的数据集）
+  - IterableDataset（适用于流式大数据集）
 - **评估**
-  - BaseMetric：评估指标的基类。
-  - Evaluator：用于执行评估任务。
-  - 包括用于保存结果的DumpResults等具体指标类。
-
+  - BaseMetric（评估指标基类）、Evaluator（评估器）、DumpResults（结果保存）等
 - **回调**
-  - CheckpointCallback：保存模型检查点。
-  - EarlyStopCallBack：早停回调。
-  - WandbCallback：支持Weights & Biases日志记录。
-  - ProgressCallBack：显示训练进度。
+  - CheckpointCallback（模型检查点）、EarlyStopCallBack（早停）、WandbCallback（Wandb日志）、ProgressCallBack（进度显示）
 
-## 环境
-- Python
-- PyTorch 1.1+
-- 支持CPU和GPU训练
-- 可选依赖：Deepspeed、Wandb、ray
+---
+
+## 环境依赖
+- Python 3.9+
+- PyTorch 2.3.0+
+- 支持 CPU/GPU
+- 可选：Deepspeed、Wandb、Ray
+
+---
 
 ## 安装
 ```bash
-git clone https://gitee.com/zengton/wall_e.git
+git clone https://github.com/alan-tsang/wall_e.git
 cd wall_e
-pip install -e .
+pip install .
 ```
 
-## 使用
+---
+
+## 快速上手
+
+只需几行代码，即可完成数据加载、模型构建、训练与评估：
+
 ```python
 from wall_e import Runner, load_cfg
 from wall_e.dataset import BaseMapDataset
@@ -70,8 +89,7 @@ train_loader = dataset.get_batch_loader(batch_size=32, num_workers=4)
 val_loader = dataset.get_batch_loader(batch_size=32, num_workers=4)
 test_loader = dataset.get_batch_loader(batch_size=32, num_workers=4)
 
-path = 'path/to/your/config.yaml'
-cfg = load_cfg(path)
+cfg = load_cfg('path/to/your/config.yaml')
 model = TransformerForCausalLLM(**cfg.model)
 
 runner = Runner(
@@ -81,26 +99,22 @@ runner = Runner(
     test_data_loader = test_loader,
     cfg = cfg,
 )
-# train, valid and test
-runner.fit()
-# independent test
-runner.test()
-
+runner.fit()      # 训练+验证+测试
+runner.test()     # 独立测试
 ```
-- 配置文件：项目使用YAML配置文件来设置训练参数。
-- 数据处理：通过dataset模块加载和处理数据。
-- 模型定义：模型组件在model目录下定义。
-- Runner：用于执行训练、验证和测试任务。
-- 调用`fit`方法来启动全实验过程。
-- 调用`test`方法启动你需要的测试
 
-查看示例目录中`gpt.py`和`tune.py`了解具体的使用方式。
+---
 
-## 许可证
-本项目的具体许可证信息请参阅LICENSE文件。
+## 配置与用法说明
+- **配置文件**：使用YAML集中管理训练参数，支持命令行动态修改，便于实验复现。
+- **数据处理**：通过`huggingface dataset`模块加载和处理数据，支持多种格式和分割方式。
+- **模型定义**：所有模型组件继承于`BaseModel`，自定义训练、测试和测试流程。
+- **Runner**：统一训练、验证、测试入口，支持灵活的回调和钩子。
+- **示例**：详见`examples/gpt.py`和`tune.py`。
 
-## 贡献
-欢迎贡献代码和建议。请提交PR或issue到项目仓库。
+---
 
-## 致谢
-本项目受到了许多开源项目的启发和支持，特别是MMEngine、LAVIS、PyTorch、Deepspeed、Wandb、Ray等社区的贡献者们。
+## 贡献与致谢
+- 欢迎提交PR或issue，参与代码和文档完善。
+- 许可证信息详见 LICENSE 文件。
+- 致谢 MMEngine、LAVIS、PyTorch、Deepspeed、Wandb、Ray 等社区。

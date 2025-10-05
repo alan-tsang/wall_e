@@ -1,11 +1,15 @@
 """ Runner for training, validation and testing.
 
+This module provides the core training execution engine for AI models.
+It handles distributed training, model optimization, logging, and callback management.
 """
 import traceback
 from typing import List, Optional, Union
 
 import torch
+from torch import nn
 import torch.distributed as dist
+from torch.utils.data import DataLoader
 from omegaconf import omegaconf, OmegaConf
 from torch.utils.data.distributed import DistributedSampler
 
@@ -19,7 +23,9 @@ from ..common.registry import registry
 from ..common.util import better_dict_4_print
 from ..dist.init import is_main_process
 from ..logging.logger import Logger
-
+from .loop.train_loop import TrainLoop
+from .loop.valid_loop import ValidLoop
+from .loop.test_loop import TestLoop
 
 
 class Runner(RunnerBase):
@@ -49,22 +55,40 @@ class Runner(RunnerBase):
     def __init__(
             self,
             model: BaseModel,
-            train_data_loader: torch.utils.data.DataLoader,
-            valid_data_loader: torch.utils.data.DataLoader = None,
-            test_data_loader: torch.utils.data.DataLoader = None,
-            train_loop = None,
-            valid_loop = None,
-            test_loop = None,
-            train_evaluator: Evaluator = None,
-            valid_evaluator: Evaluator = None,
-            test_evaluator: Evaluator = None,
-            epochs: int = None,
+            epochs: Optional[int] = None,
+            train_data_loader: Optional[DataLoader] = None,
+            valid_data_loader: Optional[DataLoader] = None,
+            test_data_loader: Optional[DataLoader] = None,
+            train_loop: Optional[TrainLoop] = None,
+            valid_loop: Optional[ValidLoop] = None,
+            test_loop: Optional[TestLoop] = None,
+            train_evaluator: Optional[Evaluator] = None,
+            valid_evaluator: Optional[Evaluator] = None,
+            test_evaluator: Optional[Evaluator] = None,
             optimizer: Optional[torch.optim.Optimizer] = None,
-            cfg: Union[dict, omegaconf.DictConfig] = None,
+            cfg: Optional[Union[dict, omegaconf.DictConfig]] = None,
 
             *args,
             **kwargs,
     ):
+        """
+        初始化训练执行器
+        
+        Args:
+            model (BaseModel): 要训练的模型
+            train_data_loader (torch.utils.data.DataLoader): 训练数据加载器
+            valid_data_loader (torch.utils.data.DataLoader, optional): 验证数据加载器
+            test_data_loader (torch.utils.data.DataLoader, optional): 测试数据加载器
+            train_loop: 自定义训练循环，如果为None则使用默认TrainLoop
+            valid_loop: 自定义验证循环，如果为None则使用默认ValidLoop
+            test_loop: 自定义测试循环，如果为None则使用默认TestLoop
+            train_evaluator (Evaluator, optional): 训练评估器
+            valid_evaluator (Evaluator, optional): 验证评估器
+            test_evaluator (Evaluator, optional): 测试评估器
+            epochs (int, optional): 训练轮数
+            optimizer (torch.optim.Optimizer, optional): 优化器，如果为None则使用默认AdamW
+            cfg (Union[dict, omegaconf.DictConfig], optional): 配置字典或OmegaConf配置对象
+        """
         super().__init__()
         self.model = model
 
@@ -83,7 +107,7 @@ class Runner(RunnerBase):
         self.epochs = epochs
         # NOTE: 启用deepspeed时，optimizer可以为空
         self.optimizer = optimizer
-        self.cfg = cfg
+        self.cfg = OmegaConf.create(cfg or {})
 
         self.state = RunnerState(self)
         registry.register("cfg", cfg)
@@ -91,6 +115,17 @@ class Runner(RunnerBase):
         self.__post_init__()
 
     def __post_init__(self):
+        """
+        初始化后的设置步骤，按顺序执行：
+        1. 设置启动策略（单机/分布式）
+        2. 设置日志记录器
+        3. 设置模型和优化器
+        4. 设置训练/验证/测试循环
+        5. 设置回调函数
+        6. 设置评估器
+        """
+        # NOTE: train_loop会注入scheduler
+        self.scheduler = None
         self.setup_launch_strategy()
         self.logger = self.setup_logger()
         self.setup_model_optimizer()
@@ -119,10 +154,16 @@ class Runner(RunnerBase):
         return self.state.current_step
 
     def fit(self, *args, **kwargs):
+        """
+        执行完整的训练流程
+        
+        包括训练前的准备、训练循环的执行、异常处理和训练后的清理工作。
+        如果发生异常，会记录详细的错误信息并调用异常处理回调（默认保存训练状态）。
+        """
         try:
             self.before_fit()
             # valid_loop、test_loop 服务于train_loop，被内置管理
-            self.train_loop.run()
+            self.train()
         except BaseException as e:
             # 获取完整的异常堆栈信息
             error_trace = traceback.format_exc()
@@ -136,22 +177,38 @@ class Runner(RunnerBase):
         finally:
             self.after_fit()
 
-    def train(self):
-        self.train_loop.run()
+    def train(self) -> nn.Module:
+        if self.train_loop is None:
+            raise ValueError("未设置训练循环过程, 请检查是否提供了训练数据")
+        trained_model = self.train_loop.run()
+        return trained_model
 
-    def valid(self):
+    def valid(self) -> dict:
+        if self.valid_loop is None:
+            raise ValueError("未设置验证循环过程, 请检查是否提供了验证数据")
         self.logger.info("开始验证...")
-        self.valid_loop.run()
+        metrics = self.valid_loop.run()
+        return metrics
 
-    def test(self):
+    def test(self) -> dict:
+        if self.test_loop is None:
+            raise ValueError("未设置测试循环过程, 请检查是否提供了测试数据")
         self.logger.info("开始测试...")
-        return self.test_loop.run()
+        metrics = self.test_loop.run()
+        return metrics
 
     def before_fit(self):
         super().before_fit()
         self.log_initial_info()
 
     def log_initial_info(self):
+        """
+        记录初始信息，包括：
+        - 启动方式（单机/分布式/DeepSpeed）
+        - 设备信息
+        - 配置信息
+        - 模型信息
+        """
         self.logger.info(f"启动方式：{self.state.start_msg}")
         self.logger.info(f"启动设备：{self.state.device}")
         self.logger.info(f"当前运行配置：\n{better_dict_4_print(self.cfg)}")
@@ -169,13 +226,23 @@ class Runner(RunnerBase):
             dist.destroy_process_group()
 
     def setup_loop(self):
+        """
+        设置训练、验证和测试循环
+        
+        如果未提供自定义循环，则创建默认的循环实例：
+        - TrainLoop: 处理训练逻辑，包括验证和测试的调度
+        - ValidLoop: 处理验证逻辑
+        - TestLoop: 处理测试逻辑
+        """
         if self.train_loop is None and self.train_data_loader is not None:
+            assert isinstance(self.epochs, int) and self.epochs > 0, "非法的epoch设置"
+            
             from .loop.train_loop import TrainLoop
             train_loop_cfg = self.cfg.training
             self.train_loop = TrainLoop(
                 runner = self,
                 dataloader = self.train_data_loader,
-                max_epochs = self.epochs,
+                max_epochs = self.epochs, # type: ignore
                 valid_begin_epoch = train_loop_cfg.get("valid_begin_epoch", 1),
                 valid_interval_epoch = train_loop_cfg.get("valid_interval_epoch", 1),
                 valid_begin_iter = train_loop_cfg.get("valid_begin_iter", 4000),
@@ -201,6 +268,16 @@ class Runner(RunnerBase):
             )
 
     def setup_logger(self):
+        """
+        设置日志记录器
+        
+        从配置中读取日志相关参数：
+        - level: 主进程日志级别
+        - rank_level: 分布式训练时从进程日志级别
+        - to_file: 是否输出到文件
+        - folder: 日志文件目录
+        - run_name: 运行名称
+        """
         return Logger.get_instance(
             "runner",
             level = OmegaConf.select(self.cfg, "log.level", default = 'INFO'),
@@ -213,10 +290,12 @@ class Runner(RunnerBase):
     def setup_launch_strategy(self):
         """
         根据设备数量、类型，自动判断单机、分布式并行、CPU
-        if 单机、CPU: python ./train.py
-        if 分布式: python -m torch.distributed.launch --nproc_per_node=4 ./train.py
-
-        兼容ray的tune环境和Trainer
+        
+        启动方式：
+        - 单机、CPU: python ./train.py
+        - 分布式: python -m torch.distributed.launch --nproc_per_node=4 ./train.py
+        
+        该函数兼容ray的分布式环境处理
         """
         if torch.cuda.is_available():
             # if dist.is_available() and not dist.is_initialized():
@@ -238,6 +317,21 @@ class Runner(RunnerBase):
         self.state.is_main_process = is_main_process()
 
     def setup_model_optimizer(self):
+        """
+        设置模型和优化器
+        
+        包括：
+        1. 模型检查点重载
+        2. 激活值重算设置（用于节省显存）
+        3. 模型设备迁移
+        4. 分布式训练包装（DDP或DeepSpeed）
+        5. 默认优化器创建
+        """
+        # 检查点重载
+        if self.state.load_from:
+            self.logger.info(f"从检查点 {self.state.load_from} 加载权重...")
+            self.model.load_checkpoint(self.state.load_from)
+
         # 激活值重算
         if (
             modules := OmegaConf.select(
@@ -262,7 +356,7 @@ class Runner(RunnerBase):
                 self.model, self.optimizer, _, _ = deepspeed.initialize(
                     model = self.model,
                     optimizer = self.optimizer,
-                    model_parameters = self.model.parameters(),
+                    model_parameters = self.model.parameters(), # type: ignore
                     config = self.state.ds_config,
                 )
                 self.state.start_msg = "使用deepspeed启动中..."
@@ -286,6 +380,17 @@ class Runner(RunnerBase):
 
 
     def setup_callbacks(self):
+        """
+        设置回调函数
+        
+        默认包括：
+        - EpochSummaryCallBack: 轮次总结回调，总结全局注册中metrics的内容，
+        即registry.get('metric')中的内容：runner运行时自动注册含loss关键字的train_step输出，
+        以及evaluator执行的输出；这些内容也会被自动注册wandb（如果开启）
+        - ProcessCallBack: 训练进度回调
+        - WandbCallback: Weights & Biases日志回调（可选）
+        - CheckpointCallback: 训练状态保存回调
+        """
         epoch_summary_callback = EpochSummaryCallBack(self)
         progress_callback = ProcessCallBack(self)
         wandb_callback = None
@@ -319,9 +424,20 @@ class Runner(RunnerBase):
         self.register_callbacks(callbacks)
 
     def extend_callbacks(self, callbacks: List[BaseCallBack]):
+        """
+        扩展回调函数列表，该API用于用户自定义扩展callback
+        
+        Args:
+            callbacks (List[BaseCallBack]): 要添加的回调函数列表
+        """
         self.callbacks.extend(callbacks)
 
     def setup_evaluator(self):
+        """
+        设置评估器
+        
+        为训练、验证和测试评估器设置状态信息
+        """
         if self.train_evaluator is not None:
             self.train_evaluator.setup_state(self.state)
         if self.valid_evaluator is not None:
@@ -330,12 +446,18 @@ class Runner(RunnerBase):
             self.test_evaluator.setup_state(self.state)
 
     @staticmethod
-    def wrap_dataloader(data_loader, shuffle):
+    def wrap_dataloader(data_loader, shuffle) -> DataLoader:
         """
-        包装数据加载器以支持分布式训练
-        :param data_loader: torch.utils.data.DataLoader
-        :param shuffle: 是否打乱数据
-        :return: torch.utils.data.DataLoader
+        在分布式训练中，使用DistributedSampler来确保不同进程处理不同的数据子集,
+        包装数据加载器以支持分布式训练;
+        
+        Args:
+            data_loader (torch.utils.data.DataLoader): 原始数据加载器
+            shuffle (bool): 是否打乱数据
+            
+        Returns:
+            torch.utils.data.DataLoader: 包装后的数据加载器
+            
         """
         if dist.is_available() and dist.is_initialized():
             sampler = DistributedSampler(
@@ -344,7 +466,7 @@ class Runner(RunnerBase):
                 rank = dist.get_rank(),
                 shuffle = shuffle
             )
-            return torch.utils.data.DataLoader(
+            return DataLoader(
                 data_loader.dataset,
                 batch_size = data_loader.batch_size,
                 sampler = sampler,

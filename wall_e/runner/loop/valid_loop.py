@@ -7,6 +7,7 @@ from .base_loop import BaseLoop
 from ..util import move_data_to_device
 from ...eval import Evaluator
 
+
 class ValidLoop(BaseLoop):
     """Loop for validation.
 
@@ -22,14 +23,13 @@ class ValidLoop(BaseLoop):
     def __init__(self,
                  runner,
                  dataloader: Union[DataLoader, Dict],
-                 evaluator: Union[Evaluator, Dict, List],
+                 evaluator: Optional[Evaluator] = None,
                  shuffle = False,
                  fp16: bool = False
-                 ) -> None:
+                 ):
         super().__init__(runner, dataloader, shuffle)
 
         self.evaluator = evaluator  # type: ignore
-
         self.fp16 = fp16
 
     def run(self) -> dict:
@@ -42,9 +42,9 @@ class ValidLoop(BaseLoop):
             self.run_iter(idx, data_batch)
 
         # compute metrics
-        metrics = None
+        metrics = {}
         if self.evaluator is not None:
-            metrics = self.evaluator.evaluate(len(self.dataloader.dataset))
+            metrics = self.evaluator.evaluate(len(self.dataloader.dataset))  # type: ignore
 
         self.runner.after_valid()
         # self.runner.call_hook('after_val_epoch', metrics=metrics)
@@ -62,8 +62,12 @@ class ValidLoop(BaseLoop):
         # self.runner.call_hook(
         #     'before_val_iter', batch_idx=idx, data_batch=data_batch)
         # outputs should be sequence of BaseDataElement
-        with autocast(enabled=self.fp16):
-            outputs = self.runner.model.valid_step(**data_batch)
+        with autocast(enabled = self.fp16):
+            if hasattr(self.runner.model, "module"):
+                # For DataParallel or DistributedDataParallel
+                outputs = self.runner.model.module.valid_step(data_batch)
+            else:
+                outputs = self.runner.model.valid_step(data_batch)
 
         if self.evaluator is not None:
-            self.evaluator.process(data_samples=outputs, data_batch=data_batch)
+            self.evaluator.process(data_samples = outputs, data_batch = data_batch)
