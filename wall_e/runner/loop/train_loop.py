@@ -7,9 +7,10 @@ import contextlib
 
 from .base_loop import BaseLoop
 from ..util import move_data_to_device
+from ... import Runner, registry
 from ...logging import print_log
 from ...util.dl_util import get_batch_n
-from ...common.registry import registry
+
 
 class TrainLoop(BaseLoop):
     """Loop for epoch-based training.
@@ -23,7 +24,7 @@ class TrainLoop(BaseLoop):
 
     def __init__(
             self,
-            runner: 'Runner',
+            runner: Runner,
             dataloader: Union[DataLoader, Dict],
             max_epochs: int,
             valid_begin_epoch,
@@ -41,7 +42,6 @@ class TrainLoop(BaseLoop):
         assert self._max_epochs == max_epochs, \
             f'`max_epochs` should be a integer number, but get {max_epochs}.'
         self._max_iters = self._max_epochs * len(self.dataloader)
-        self._iters_per_epoch = len(self.dataloader)
         self._epoch = 0
         self._iter = 0
         self.valid_begin_epoch = valid_begin_epoch
@@ -52,14 +52,11 @@ class TrainLoop(BaseLoop):
         self.test_interval_epoch = test_interval_epoch
         self.test_begin_iter = test_begin_iter
         self.test_interval_iter = test_interval_iter
-        
-        self.cfg = self.runner.cfg
         # This attribute will be updated by `EarlyStopCallBack`
         # when it is enabled.
 
         self.scheduler = self.setup_scheduler()
         self.runner.scheduler = self.scheduler
-        
 
         self.__post_init__()
 
@@ -67,22 +64,22 @@ class TrainLoop(BaseLoop):
         self.scaler = torch.cuda.amp.GradScaler() if self.is_16bit else None
 
     @property
-    def max_epochs(self) -> int:
+    def max_epochs(self):
         """int: Total epochs to train model."""
         return self._max_epochs
 
     @property
-    def max_iters(self) -> int:
+    def max_iters(self):
         """int: Total iterations to train model."""
         return self._max_iters
 
     @property
-    def epoch(self) -> int:
+    def epoch(self):
         """int: Current epoch."""
         return self._epoch
 
     @property
-    def iter(self) -> int:
+    def iter(self):
         """int: Current iteration."""
         return self._iter
 
@@ -104,10 +101,8 @@ class TrainLoop(BaseLoop):
     def prepare_run(self):
         if self.runner.state.resume_from:
             self.resume()
-        # 在runner的setup_model，处理了
-        # elif self.runner.state.load_from:
-        #     self.load()
-
+        elif self.runner.state.load_from:
+            self.load()
 
     def run(self) -> torch.nn.Module:
         """Launch training."""
@@ -120,22 +115,22 @@ class TrainLoop(BaseLoop):
 
             if (self.runner.valid_loop is not None
                     and self._epoch >= self.valid_begin_epoch
-                    and ((self._epoch - self.valid_interval_epoch)  % self.valid_interval_epoch == 0
+                    and (self._epoch % self.valid_interval_epoch == 0
                          or self._epoch == self._max_epochs)):
-                self.runner.logger.info(f"验证 at epoch: {self._epoch}...")
+                self.runner.logger.info(f"valid at epoch: {self._epoch}...")
                 self.runner.valid_loop.run()
 
             if (self.runner.test_loop is not None
                     and self._epoch >= self.test_begin_epoch
-                    and ((self._epoch - self.test_interval_epoch) % self.test_interval_epoch == 0
+                    and (self._epoch % self.test_interval_epoch == 0
                          or self._epoch == self._max_epochs)):
-                self.runner.logger.info(f"测试 at epoch: {self._epoch}...")
+                self.runner.logger.info(f"test at epoch: {self._epoch}...")
                 self.runner.test_loop.run()
 
         self.runner.after_train()
         return self.runner.model
 
-    def run_epoch(self):
+    def run_epoch(self) -> None:
         """Iterate one epoch."""
         self.runner.before_running_epoch()
         self.runner.model.train()
@@ -147,30 +142,29 @@ class TrainLoop(BaseLoop):
             data_batch = move_data_to_device(data_batch, self.runner.state.device)
             with self.maybe_autocast(self.is_16bit):
                 self.runner.state.current_step = self._iter + 1
-                self.run_iter(idx, data_batch) # type: ignore
-            self._iter += 1
-            
-            iter_now = self._iter + self._epoch * self._iters_per_epoch
+                self.run_iter(idx, data_batch)
+
             if (self.runner.valid_loop is not None
-                    and iter_now >= self.valid_begin_iter
-                    and ((iter_now - self.valid_begin_iter)  % self.valid_interval_iter == 0
-                         or iter_now == self._max_iters)):
-                self.runner.logger.info(f"验证 at iter: {iter_now}...")
+                    and self._iter >= self.valid_begin_iter
+                    and (self._iter % self.valid_interval_iter == 0
+                         or self._iter == self._max_iters)):
+                self.runner.logger.info(f"valid at iter: {self._iter}...")
                 self.runner.valid_loop.run()
 
             if (self.runner.test_loop is not None
-                    and iter_now >= self.test_begin_iter
-                    and ((iter_now - self.test_begin_iter) % self.test_interval_iter == 0
-                         or iter_now == self._max_iters)):
-                self.runner.logger.info(f"测试 at iter: {iter_now}...")
+                    and self._iter >= self.test_begin_iter
+                    and (self._iter % self.test_interval_iter == 0
+                         or self._iter == self._max_iters)):
+                self.runner.logger.info(f"test at iter: {self._iter}...")
                 self.runner.test_loop.run()
 
+            self._iter += 1
 
         self.runner.after_running_epoch()
         self._epoch += 1
 
 
-    def run_iter(self, idx, data_batch: dict[str, Sequence]) -> None:
+    def run_iter(self, idx, data_batch: Sequence[dict]) -> None:
         """Iterate one min-batch.
 
         Args:
@@ -180,38 +174,22 @@ class TrainLoop(BaseLoop):
 
         if hasattr(self.runner.model, "module"):
             # For DataParallel or DistributedDataParallel
-            model_output = self.runner.model.module.train_step(data_batch)
+            model_output = self.runner.model.module.train_step(**data_batch)
         else:
-            model_output = self.runner.model.train_step(data_batch)
+            model_output = self.runner.model.train_step(**data_batch)
         assert "loss" in model_output, "模型输出必须返回包含loss的字典"
-
-        skip_batch = torch.isnan(model_output["loss"]).any().item()
-
-        # 分布式环境下同步跳过的决策
-        if torch.distributed.is_initialized():
-            skip_batch_tensor = torch.tensor([skip_batch], device=self.runner.device)
-            torch.distributed.all_reduce(skip_batch_tensor, op=torch.distributed.ReduceOp.MAX)
-            skip_batch = skip_batch_tensor.item()
-
-        if skip_batch:
-            self.runner.logger.error("该批次检测到NaN，所有进程跳过该batch")
-        else:
-            self.backward(self.scaler, model_output["loss"])
-            self.register_model_output(model_output)
+        self.backward(self.scaler, model_output["loss"])
+        self.register_model_output(model_output)
 
         self.runner.after_running_batch()
 
 
     @staticmethod
     def register_model_output(model_output):
-        # 注册并报告所有包含"loss"的键值
-        for key, value in model_output.items():
-            if "loss" in key and isinstance(value, torch.Tensor):
-                registry.register(f"metric.{key}", value.item())
-                
-                if registry.get("cfg.training.is_sweep", False):
-                    import ray
-                    ray.train.report(metrics={key: value.item()}) # type: ignore
+        registry.register("metric.loss", model_output["loss"].item())
+        import ray
+        if registry.get("cfg.training.is_sweep", False):
+            ray.train.report(metrics = {"loss": model_output["loss"].item()})
 
 
     def setup_scheduler(self):
@@ -267,24 +245,21 @@ class TrainLoop(BaseLoop):
             scaler.step(self.runner.optimizer)
             scaler.update()
         else:
-            if self.runner.optimizer is not None:
-                self.runner.optimizer.step()
+            self.runner.optimizer.step()
 
         if self.scheduler is not None:
             self.scheduler.step(self.runner.state.current_step)
-        if self.runner.optimizer is not None:
-            self.runner.optimizer.zero_grad()
+
+        self.runner.optimizer.zero_grad()
         self.runner.state.accumulation_count = 0
 
 
     def resume(self):
         """
-        跳过data_loader可能很耗时, 因此保守实现：恢复epoch，随机数，优化器，model，cfg
+        跳过data_loader可能很耗时
         """
-        if self.runner.checkpoint_callback is None:
-            raise RuntimeError("未设置checkpoint callback，无法复原训练状态！")
         start_epoch, start_batch = self.runner.checkpoint_callback \
-            .load_checkpoint(self.runner.state.resume_from) # type: ignore
+            .load_checkpoint(self.runner.state.resume_from)
         self._epoch = start_epoch
         self.runner.state.current_epoch = self._epoch
         # self._iter = start_batch
@@ -293,9 +268,4 @@ class TrainLoop(BaseLoop):
         print_log(f'恢复点 epoch: {start_epoch}', "current")
 
     def load(self):
-        if hasattr(self.runner.model, "module"):
-            # For DataParallel or DistributedDataParallel
-            self.runner.model.module.load_checkpoint(self.runner.state.load_from)
-        else:
-            self.runner.model.load_checkpoint(self.runner.state.load_from)
-
+        self.runner.model.load_checkpoint(self.runner.state.load_from)

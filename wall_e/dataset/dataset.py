@@ -1,6 +1,6 @@
 import os
 from typing import Sequence, Union, Optional, Callable, List, Dict, Any
-from datasets import Dataset, DatasetDict, IterableDataset, load_dataset, load_from_disk
+from datasets import Dataset, DatasetDict, IterableDataset, load_dataset
 import warnings
 
 from .base_dataset import BaseDataset
@@ -24,8 +24,7 @@ class BaseMapDataset(BaseDataset):
             metadata = metadata,
         )
         self.split_ratios = split_ratios
-        self.dataset = self._set_dataset(data_source, only_local)
-        
+        self._set_dataset(data_source, only_local)
 
         # 自动数据集划分
         if split_ratios:
@@ -35,19 +34,19 @@ class BaseMapDataset(BaseDataset):
                 self.auto_split(shuffle, split_ratios)
 
 
-    def _set_dataset(self, data_source, only_local) -> Union[Dataset, DatasetDict]:
+    def _set_dataset(self, data_source, only_local) -> Dataset or DatasetDict:
         # 加载数据集
         if isinstance(data_source, str):
             """return a Dataset object"""
             if os.path.exists(data_source):
                 if os.path.isdir(data_source):
-                    dataset = load_from_disk(data_source)
+                    self.dataset = load_dataset(data_source)
                 else:
                     data_format = infer_data_format(data_source)
                     if data_format is None:
                         raise ValueError("无法推断数据格式，请通过data_format参数指定。")
 
-                    dataset = load_dataset(
+                    self.dataset = load_dataset(
                         data_format,
                         # 本地加载数据集，我往往不手动分割数据集，所以默认加载train集实际就是全部数据
                         # 后续再分割
@@ -58,19 +57,17 @@ class BaseMapDataset(BaseDataset):
                 """return a DatasetDict object"""
                 # HuggingFace Hub 名称
                 if isinstance(data_source, str):
-                    # streaming=False加载的数据不会是流式的
-                   dataset = from_hf_dataset(data_source, None, only_local, streaming = False)
+                   self.dataset = from_hf_dataset(data_source, None, only_local)
 
         elif isinstance(data_source, Sequence):
-            dataset = from_hf_dataset(data_source[0], data_source[1], only_local, streaming = False)
+            self.dataset = from_hf_dataset(data_source[0], data_source[1], only_local)
         elif isinstance(data_source, (Dataset, DatasetDict)):
-            dataset = data_source
+            self.dataset = data_source
         else:
             raise ValueError("不支持的数据源类型，当前支持str, [str, str], Dataset, DatasetDict类型")
 
-        return dataset # type: ignore
 
-    def auto_split(self, shuffle, ratios: tuple) -> Optional[DatasetDict]:
+    def auto_split(self, shuffle, ratios: tuple) -> DatasetDict:
         """
 
         :param ratios:
@@ -190,7 +187,7 @@ class BaseIterableDataset(BaseDataset):
             data_source = data_source,
             metadata = metadata,
         )
-        self.dataset = self._set_dataset(data_source, only_local)
+        self._set_dataset(data_source, only_local)
 
 
     def _set_dataset(self, data_source: Union[str, Sequence, Dataset, DatasetDict],
@@ -205,7 +202,7 @@ class BaseIterableDataset(BaseDataset):
                 if data_format is None:
                     raise ValueError("无法推断数据格式，请通过data_format参数指定。")
 
-                dataset = load_dataset(
+                self.dataset = load_dataset(
                     data_format,
                     split = 'train',
                     data_files=data_source,
@@ -213,22 +210,18 @@ class BaseIterableDataset(BaseDataset):
                 )
             else:
                 # 远程HuggingFace Hub
-                dataset = from_hf_dataset(data_source, None, only_local, streaming = True)
+                self.dataset = from_hf_dataset(data_source, None, only_local, streaming = True)
 
         elif isinstance(data_source, Sequence):
             # 远程HuggingFace Hub
-            dataset = from_hf_dataset(data_source[0], data_source[1], only_local, streaming=True)
-        elif isinstance(data_source, Dataset):
-            dataset = data_source.to_iterable_dataset()
-        elif isinstance(data_source, DatasetDict):
-            # 将每个split都转换为IterableDataset
-            dataset = {k: v.to_iterable_dataset() for k, v in data_source.items()}
+            self.dataset = from_hf_dataset(data_source[0], data_source[1], only_local, streaming=True)
+        elif isinstance(data_source, (Dataset, DatasetDict)):
+            self.dataset = data_source.to_iterable_dataset()
         elif isinstance(data_source, IterableDataset):
-            dataset = data_source
+            self.dataset = data_source
         else:
             raise ValueError("不支持的数据源类型")
 
-        return dataset
 
     def __iter__(self):
         yield from self.dataset
@@ -263,7 +256,7 @@ def infer_data_format(path: str) -> Optional[str]:
     return format_mapping.get(ext)
 
 
-def from_hf_dataset(path: str, name, only_local, streaming = False):
+def from_hf_dataset(path: str, name, only_local, streaming = False) -> Dataset:
     if not only_local:
         dataset = load_dataset(path, name, streaming = streaming, trust_remote_code = True)
     else:

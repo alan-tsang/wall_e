@@ -126,7 +126,7 @@ class TransformerForClassification(BaseModel):
         return sum_embeddings / sum_mask
 
 @registry.register_model("TransformerForCausalLLM")
-class TransformerForCausalLLM(nn.Module):
+class TransformerForCausalLLM(BaseModel):
     def __init__(
         self,
         vocab_n,
@@ -189,9 +189,13 @@ class TransformerForCausalLLM(nn.Module):
         length_begin = input_ids.shape[1]
         past_key_values = None
         generated = input_ids
-        current_input = input_ids
 
         for _ in range(max_length - length_begin):
+            # 获取当前输入（最后一个token）
+            current_input = generated[:, -1:]
+
+            # 生成掩码（仅关注当前token）
+
             # 前向传播（使用历史缓存）
             out_prob, past_key_values = self(
                 current_input,
@@ -205,8 +209,5 @@ class TransformerForCausalLLM(nn.Module):
 
             # 添加到生成序列
             generated = torch.cat([generated, next_token.unsqueeze(1)], dim=1)
-            # 获取当前输入（最后一个token）
-            current_input = generated[:, -1:]
-
 
         return dict(pred_ids = generated)

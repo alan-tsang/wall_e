@@ -21,16 +21,14 @@ class TestLoop(BaseLoop):
 
     def __init__(self,
                  runner,
-                 dataloader: DataLoader,
-                 evaluator: Optional[Evaluator],
+                 dataloader: Union[DataLoader, Dict],
+                 evaluator: Union[Evaluator, Dict, List],
                  shuffle = False,
-                 fp16: bool = False
-                 ):
+                 fp16: bool = False):
         super().__init__(runner, dataloader, shuffle)
 
         self.evaluator = evaluator  # type: ignore
         self.fp16 = fp16
-
 
     def run(self) -> dict:
         """Launch test."""
@@ -42,17 +40,16 @@ class TestLoop(BaseLoop):
             self.run_iter(idx, data_batch)
 
         # compute metrics
-        metrics = {}
+        metrics = None
         if self.evaluator is not None:
-            metrics = self.evaluator.evaluate(len(self.dataloader.dataset)) # type: ignore
+            metrics = self.evaluator.evaluate(len(self.dataloader.dataset))
 
         self.runner.after_test()
 
         return metrics
-    
 
     @torch.no_grad()
-    def run_iter(self, idx, data_batch: dict[str, Sequence]):
+    def run_iter(self, idx, data_batch: Sequence[dict]) -> None:
         """Iterate one mini-batch.
 
         Args:
@@ -60,11 +57,7 @@ class TestLoop(BaseLoop):
         """
         # predictions should be sequence of BaseDataElement
         with autocast(enabled=self.fp16):
-            if hasattr(self.runner.model, "module"):
-                # For DataParallel or DistributedDataParallel
-                outputs = self.runner.model.module.test_step(data_batch)
-            else:
-                outputs = self.runner.model.test_step(data_batch)
+            outputs = self.runner.model.test_step(**data_batch)
 
         if self.evaluator is not None:
             self.evaluator.process(data_samples=outputs, data_batch=data_batch)
