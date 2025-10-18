@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from deepspeed.moe.layer import MoE
 
-from wall_e import BaseModel
+from ..base_model import BaseModel
 
 
 class FFN(nn.Module):

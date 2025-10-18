@@ -4,8 +4,16 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 
 from wall_e import *
-from model.transformer import *
+from wall_e.model.transformer import (TransformerForCausalLM, GenerationConfig,
+                                        get_generation_strategy)
 
+generation_config = GenerationConfig(
+    method = 'greedy',
+    max_length = 36,
+    eos_token_id = 1,
+    early_stopping = True,
+)
+generation_method = get_generation_strategy(generation_config)
 
 class CustomDataset(Dataset):
     def __init__(self, vocab_n, max_len, data_n):
@@ -32,19 +40,22 @@ def collate_fn(batch):
 
         pad_mask = (input_ids == pad).unsqueeze(-2)
         look_ahead_mask = look_ahead_mask(input_ids.shape[-1])
-        mask = pad_mask | look_ahead_mask
-        return mask
+        attention_mask = pad_mask | look_ahead_mask
+        
+        attention_mask = 1 - attention_mask
+
+        return attention_mask
 
     data = torch.stack(batch)
     input_ids = data[:, :-1]
     label = data[:, 1:]
 
     pad = 0
-    mask = make_mask(input_ids, pad)
+    attention_mask = make_mask(input_ids, pad)
 
     return {
         'input_ids': input_ids,
-        'mask': mask,
+        'attention_mask': attention_mask,
         'label': label
     }
 
@@ -88,10 +99,14 @@ def collate_test_fn(batch):
     seed, full = zip(*batch)
     seed = torch.stack(seed)
     full = torch.stack(full)
+    pad = 0
+    attention_mask = (seed != pad).to(torch.uint8)
     return {
         "input_ids": seed,
+        "attention_mask": attention_mask,
         "label": full,
     }
+
 
 
 from torch import nn
@@ -104,18 +119,20 @@ class DemoNet(BaseModel):
         self.logit_generator = logit_generator
         self.criterion = nn.CrossEntropyLoss()
 
-    def forward(self, input_ids, mask = None, *args, **kwargs):
-        out_prob, past_key_values = self.transformer(input_ids, mask = mask)
-        logit = self.logit_generator(out_prob)
-        
-        return dict(logit = logit, past_key_values = past_key_values)
+    def forward(self, input_ids, attention_mask = None, *args, **kwargs):
+        outputs = self.transformer(input_ids, attention_mask = attention_mask)
+        logits = outputs['hidden_states']
+        past_key_values = outputs['past_key_values']
+        logit = self.logit_generator(logits)
+
+        return dict(logits_ids = logit, past_key_values = past_key_values)
 
     def train_step(self, data_batch):
         input_ids = data_batch["input_ids"]
-        mask = data_batch["mask"]
+        attention_mask = data_batch["attention_mask"]
         label = data_batch["label"]
-        outputs = self.forward(input_ids, mask)
-        loss_output = self.compute_loss(outputs["logit"], label)
+        outputs = self.forward(input_ids, attention_mask)
+        loss_output = self.compute_loss(outputs["logits_ids"], label)
         return outputs | loss_output
 
     def valid_step(self, *args, **kwargs):
@@ -123,12 +140,14 @@ class DemoNet(BaseModel):
 
     def test_step(self, data_batch, **kargs):
         input_ids = data_batch["input_ids"]
-        return self.transformer.generate(
-            input_ids,
-            generator = self.logit_generator,
-            max_length = cfg.data.max_len
+        attention_mask = data_batch["attention_mask"]
+
+        return generation_method.generate(
+            model=self,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
         )
-    
+
     def compute_loss(self, logit, label) -> dict:
         loss = self.criterion(logit.view(-1, logit.size(-1)), label.view(-1))
         return dict(loss = loss)
@@ -141,7 +160,7 @@ class ValidMetric(BaseMetric):
         self.prefix = 'valid'
 
     def process(self, data_batch, data_samples) -> None:
-        pred = data_samples["logit"].argmax(dim = -1)
+        pred = data_samples["logits_ids"].argmax(dim = -1)
         label = data_batch['label']
         self.results.append([pred, label])
 
@@ -164,32 +183,32 @@ class TestMetric(ValidMetric):
         self.prefix = 'test'
 
     def process(self, data_batch, data_samples) -> None:
-        pred = data_samples["pred_ids"]
+        pred = data_samples["generated_ids"]
         label = data_batch['label']
         self.results.append([pred, label])
 
 
 class DumpValidResult(DumpResults):
     def process(self, data_batch, predictions) -> None:
-        logit = predictions['logit'].cpu().numpy()
+        logit = predictions['logits_ids'].cpu().numpy()
         label = data_batch['label'].cpu().numpy()
-        pred_ids = logit.argmax(axis = -1)
+        generated_ids = logit.argmax(axis = -1)
         self.results.append(
             {
-                'logit': logit,
+                'logits_ids': logit,
                 'label': label,
-                'pred_ids': pred_ids
+                'generated_ids': generated_ids
             }
         )
 
 
 class DumpTestResult(DumpResults):
     def process(self, data_batch: Any, predictions: dict) -> None:
-        pred_ids = predictions["pred_ids"].cpu().numpy()
+        generated_ids = predictions["generated_ids"].cpu().numpy()
         label = data_batch['label'].cpu().numpy()
         self.results.append(
             {
-                'pred_ids': pred_ids,
+                'generated_ids': generated_ids,
                 'label': label
             }
         )
@@ -199,7 +218,7 @@ if __name__ == '__main__':
     import argparse
 
     arg = argparse.ArgumentParser()
-    arg.add_argument('--cfg', type = str, default = './cfg.yaml')
+    arg.add_argument('--cfg', type = str, default = './cfg.yml')
     args, _ = arg.parse_known_args()
     cfg_path = args.cfg
     cfg = load_cfg(cfg_path)
@@ -232,10 +251,11 @@ if __name__ == '__main__':
     model = registry.get_model_class(cfg.model.type)(**model_cfg)
     logit_generator = nn.Linear(model_cfg.d, model_cfg.vocab_n)
     net = DemoNet(model, logit_generator)
+    from wall_e.util.dl_util import get_model_info
     # net.load_checkpoint('example/transformer_to_copy_str.pth')
 
-    valid_evaluator = Evaluator([ValidMetric(), DumpValidResult(f'./assert/valid.pkl')])
-    test_evaluator = Evaluator([TestMetric(), DumpTestResult(f'./assert/test.pkl')])
+    valid_evaluator = Evaluator([ValidMetric(), DumpValidResult(f'result/valid')])
+    test_evaluator = Evaluator([TestMetric(), DumpTestResult(f'result/test')])
 
     runner = Runner(
         train_data_loader = bench_loader,

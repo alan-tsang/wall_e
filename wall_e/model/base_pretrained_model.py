@@ -1,4 +1,5 @@
 """
+# TODO, 暂时没用上
 1. 本基类基于transformers的基础模块，内置load_state_dict, from_pretrained等方法；
 note: PreTrainedModel对forward输入没有格式要求，输出也没有要求
 

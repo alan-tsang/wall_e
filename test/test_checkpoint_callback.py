@@ -3,11 +3,12 @@ from unittest.mock import patch, MagicMock
 import os
 from omegaconf import OmegaConf
 from wall_e.callback.checkpoint_callback import CheckpointCallback
-
+from wall_e import registry
 
 # 定义模拟的 Runner 类
 class MockRunner:
     def __init__(self):
+        registry.register("cfg.run_timestamp", "20250101_000000")
         self.cfg = OmegaConf.create(
             {
                 "pt": {
@@ -15,11 +16,12 @@ class MockRunner:
                     "epoch_interval": 1,
                     "begin_batch": 1,
                     "batch_interval": 1,
-                    "dir": "./checkpoints",
                     "best_monitor": {"loss": False},
                     "topk": 3
                 },
-                "run_name": "test_run"
+                "run_name": "test_checkpoint",
+                "run_dir": './run',
+                # "run_timestamp": '202510181221'
             }
         )
         self.is_main_process = True

@@ -3,6 +3,7 @@
 This module provides the core training execution engine for AI models.
 It handles distributed training, model optimization, logging, and callback management.
 """
+import os
 import traceback
 from typing import List, Optional, Union
 
@@ -111,6 +112,7 @@ class Runner(RunnerBase):
 
         self.state = RunnerState(self)
         registry.register("cfg", cfg)
+        registry.register("cfg.run_timestamp", self.state.run_timestamp)
 
         self.__post_init__()
 
@@ -128,6 +130,7 @@ class Runner(RunnerBase):
         self.scheduler = None
         self.setup_launch_strategy()
         self.logger = self.setup_logger()
+
         self.setup_model_optimizer()
         self.setup_loop()
         self.setup_callbacks()
@@ -200,6 +203,14 @@ class Runner(RunnerBase):
     def before_fit(self):
         super().before_fit()
         self.log_initial_info()
+        # 将配置文件写入到实验目录中
+        cfg_write_folder = os.path.join(
+            self.cfg.run_dir,
+            self.cfg.run_name,
+            self.state.run_timestamp
+        )
+        from omegaconf import OmegaConf
+        OmegaConf.save(self.cfg, f'{cfg_write_folder}/cfg.yaml')
 
     def log_initial_info(self):
         """
@@ -283,7 +294,7 @@ class Runner(RunnerBase):
             level = OmegaConf.select(self.cfg, "log.level", default = 'INFO'),
             rank_level = OmegaConf.select(self.cfg, "log.rank_level", default = "WARNING"),
             to_file = OmegaConf.select(self.cfg, "log.to_file", default = True),
-            folder = OmegaConf.select(self.cfg, "log.folder", default = './logs'),
+            folder = OmegaConf.select(self.cfg, "run_dir", default = './run'),
             run_name = OmegaConf.select(self.cfg, "run_name", default = 'default')
         )
 
@@ -305,7 +316,7 @@ class Runner(RunnerBase):
                 if num_gpus > 1 or self.is_deepspeed:
                     is_successful = init_distributed_mode()
                     if is_successful is False:
-                        raise Exception("分布式环境初始化失败！")
+                        raise Exception("检测到分布式环境，尝试以torchrun启动脚本！")
 
             if dist.is_initialized():
                 device = torch.device(f'cuda:{dist.get_rank()}')
@@ -439,11 +450,11 @@ class Runner(RunnerBase):
         为训练、验证和测试评估器设置状态信息
         """
         if self.train_evaluator is not None:
-            self.train_evaluator.setup_state(self.state)
+            self.train_evaluator.setup_state(self.state, self)
         if self.valid_evaluator is not None:
-            self.valid_evaluator.setup_state(self.state)
+            self.valid_evaluator.setup_state(self.state, self)
         if self.test_evaluator is not None:
-            self.test_evaluator.setup_state(self.state)
+            self.test_evaluator.setup_state(self.state, self)
 
     @staticmethod
     def wrap_dataloader(data_loader, shuffle) -> DataLoader:

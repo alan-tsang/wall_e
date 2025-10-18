@@ -113,8 +113,8 @@ class BaseDataset(ABC):
                 # IterableDataset 不支持 remove_columns
                 # 且 filter 操作不支持 num_proc
                 if op == 'filter':
-                    return ds.filter(**base_params)
-                return ds.map(**base_params)
+                    return ds.filter(**base_params, load_from_cache_file=True)
+                return ds.map(**base_params, load_from_cache_file=True)
 
             raise ValueError(f"Unsupported dataset type: {type(ds)}")
 

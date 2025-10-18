@@ -4,12 +4,10 @@ import pickle
 from abc import ABCMeta, abstractmethod, ABC
 from typing import Any, List, Optional, Sequence, Union
 
-from sympy.physics.units import current
 from torch import Tensor
 
 from ..logging.logger import Logger
 from ..common.registry import registry
-from ..common.util import first_call_warning
 from ..dist import (broadcast_object_list, collect_results,
                            is_main_process)
 
@@ -167,8 +165,8 @@ class DumpResults(BaseMetric, ABC):
     """Dump model predictions to a pickle file for offline evaluation.
 
     Args:
-        out_file_path (str): Path of the dumped file. Must end with '.pkl'
-            or '.pickle'.
+        out_file_path (str): Path of the dumped file. The data wil be stored
+        as pickle file.
         collect_device (str): Device name used for collecting results from
             different ranks during distributed training. Must be 'cpu' or
             'gpu'. Defaults to 'cpu'.
@@ -184,9 +182,8 @@ class DumpResults(BaseMetric, ABC):
                  collect_dir: Optional[str] = None) -> None:
         super().__init__(
             collect_device=collect_device, collect_dir=collect_dir)
-        if not out_file_path.endswith(('.pkl', '.pickle')):
-            raise ValueError('The output file must be a pkl file.')
-        self.out_file_path = out_file_path
+        self.out_file_path = out_file_path.strip('/') + '/'
+        print(self.out_file_path)
 
     @abstractmethod
     def process(self, data_batch: Any, predictions: dict) -> None:
@@ -194,17 +191,18 @@ class DumpResults(BaseMetric, ABC):
 
     def compute_metrics(self, results: list) -> dict:
         """Save results to a pickle file with epoch/batch in filename if available."""
-        base, ext = os.path.splitext(self.out_file_path)
-        os.makedirs(os.path.dirname(base), exist_ok=True)
+        folder = os.path.join(self.runner.cfg.run_dir, self.runner.cfg.run_name
+                     , self.state.run_timestamp, self.out_file_path)
+        os.makedirs(folder, exist_ok=True)
         suffix = []
 
         current_epoch = self.state.current_epoch
         current_step = self.state.current_step
         if current_epoch is not None:
-            suffix.append(f'_epoch_{current_epoch}')
+            suffix.append(f'epoch_{current_epoch}')
         if current_step is not None:
             suffix.append(f'_batch_{current_step}')
-        out_file = f"{base}{''.join(suffix)}{ext}"
+        out_file = f"{folder}/{''.join(suffix)}.pkl"
 
         with open(out_file, 'wb') as f:
             pickle.dump(results, f)
