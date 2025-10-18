@@ -27,9 +27,10 @@ class Evaluator:
             else:
                 self.metrics.append(metric)
 
-    def setup_state(self, state):
+    def setup_state(self, state, runner):
         for metric in self.metrics:
             metric.state = state
+            metric.runner = runner
 
     @property
     def dataset_meta(self) -> Optional[dict]:

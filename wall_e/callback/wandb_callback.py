@@ -1,4 +1,5 @@
 import wandb
+import os
 from omegaconf import OmegaConf
 
 from .base_callback import BaseCallBack
@@ -9,8 +10,14 @@ from ..common.registry import registry
 class WandbCallback(BaseCallBack):
     def __init__(self, runner):
         super().__init__(runner)
+
         if self.runner.is_main_process and wandb.run is None:
             cfg = self.runner.cfg
+            wandb_dir = os.path.join(
+                OmegaConf.select(cfg,"run_dir", default = './run'),
+                OmegaConf.select(cfg, "run_name", default = 'default'),
+                OmegaConf.select(cfg, "run_timestamp")
+            )
             wandb.init(
                 project=OmegaConf.select(cfg,"wandb.proj_name", default = 'default'),
                 name=OmegaConf.select(cfg,"run_name", default = 'default'),
@@ -18,9 +25,9 @@ class WandbCallback(BaseCallBack):
                 mode="offline" if OmegaConf.select(cfg,"wandb.offline", default = False) \
                     else "online",
                 config = dict(cfg),
-                dir = OmegaConf.select(cfg,"wandb.dir", default = './'),
+                dir = wandb_dir,
                 save_code = True,
-                tags = OmegaConf.select(cfg,"wandb.dir", default = None)
+                tags = OmegaConf.select(cfg,"wandb.tags", default = None)
             )
 
     def after_running_batch(self):

@@ -121,7 +121,7 @@ class BaseMapDataset(BaseDataset):
                 }
             )
 
-    def get_subset(self, split = None, n = 1, start = 0) -> "BaseMapDataset":
+    def get_subset(self, split = None, n = None, start = 0) -> "BaseMapDataset":
         """获取子集"""
         if isinstance(self.dataset, DatasetDict):
             assert split is not None, "split should be specified when dataset is a DatasetDict."
@@ -141,10 +141,11 @@ class BaseMapDataset(BaseDataset):
         )
 
 
-    def get_split(self, split: str) -> Dataset:
+    def get_split(self, split: str) -> "BaseMapDataset":
         if isinstance(self.dataset, Dataset):
             raise Exception("Dataset对象没有划分，无法获取子集")
-        return self.dataset[split]
+        return BaseMapDataset(data_source = self.dataset[split], split_ratios=None,
+                              shuffle = False, metadata = self.metadata)
 
 
     def __len__(self) -> int:

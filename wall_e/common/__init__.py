@@ -3,7 +3,7 @@ try:
     import rdkit
 except ImportError:
     HAS_RDKIT = False
-    warnings.warn("RDKit is not installed. dl_util.py will be unavailable.")
+    # warnings.warn("RDKit is not installed. dl_util.py will be unavailable.")
 else:
     HAS_RDKIT = True
 

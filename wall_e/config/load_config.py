@@ -5,11 +5,11 @@ from omegaconf import OmegaConf
 def load_cfg(path):
     base_cfg = OmegaConf.load(path)
     cli_cfg = OmegaConf.from_cli()
-    ds_cfg = base_cfg.training.get("ds_config", None)
+    ds_cfg = base_cfg.get("training.ds_config", None)
     ds_cfg = OmegaConf.load(ds_cfg) if ds_cfg else {}
 
-    is_sweep = base_cfg.training.get("is_sweep", False)
-    print("wandb sweep: ", is_sweep)
+    # is_sweep = base_cfg.training.get("is_sweep", False)
+    # print("wandb sweep: ", is_sweep)
     runtime_cfg = {}
     # if is_sweep:
     #     """
