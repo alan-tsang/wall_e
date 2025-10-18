@@ -31,7 +31,7 @@ class CheckpointCallback(BaseCallBack):
 
         if self.runner.is_main_process:
             self.folder = self.generate_save_folder(
-                base_folder = OmegaConf.select(cfg, "pt.dir", default = './checkpoints'),
+                base_folder = OmegaConf.select(cfg, "run_dir", default = './run'),
                 prefix = OmegaConf.select(cfg, "run_name", default = 'default')
             )
         else:
@@ -67,10 +67,9 @@ class CheckpointCallback(BaseCallBack):
     @staticmethod
     def generate_save_folder(base_folder: str, prefix: str) -> str:
         """生成带时间戳的子过程检查点保存文件名（不含后缀）"""
-        timestamp = now()
-        return os.path.join(
-            base_folder, f"{prefix}_{timestamp}" if prefix else timestamp
-        )
+        timestamp = registry.get("cfg.run_timestamp")
+        folder = os.path.join(base_folder, prefix, timestamp, "checkpoint")
+        return folder
 
     def _get_model_state(self):
         return self.runner.model.module.state_dict() if hasattr(self.runner.model, "module") \

@@ -12,7 +12,7 @@ from ray import train
 from wall_e import *
 import torch.distributed as dist
 
-from model.transformer import TransformerForCausalLLM
+from model.transformer import TransformerDecoder
 
 
 class CustomDataset(Dataset):

@@ -1,5 +1,6 @@
 # The name of the experiment
 run_name: 'copy str'
+run_dir: './run'
 run_description: "use transformer to copy str"
 
 # Custom parameters
@@ -10,7 +11,7 @@ data:
   batch_size: 16
   seed_len: 10
 model:
-  type: "TransformerForCausalLLM"
+  type: "TransformerForCausalLM"
   vocab_n: 76
   num_layers: 2
   d: 512
@@ -35,7 +36,7 @@ scheduler:
   warmup_start_lr: 1e-5
 training:
   epochs: 20
-#  ds_config: '/home/alan/desktop/project/tmp/wall_e/example/deepspeed.json'
+  # ds_config: 'deepspeed.json'
   is_sweep: true
   gradient_accumulation: 1
   resume_from: null
@@ -44,12 +45,12 @@ training:
 #    'transformer.encoder.layers.0',
 #    'transformer.encoder.layers.1',
 #    'transformer.decoder.layers.0',
-    'transformer.decoder.layers.1'
+    'transformer.layers.1'
   ]
   grad_clip: null
   fp16: true
 
-  print_model: false
+  print_model: true
   progress_show:
     loss: false
     valid/acc: true
@@ -69,12 +70,10 @@ training:
 
 log:
   to_file: true
-  folder: "./assert/logs"
   level: "INFO"
   rank_level: "WARNING"
 pt:
   enable: true
-  dir: "./assert/checkpoints"
   best_monitor:
     loss: false
   topk: 5
@@ -86,5 +85,4 @@ wandb:
   enable: true
   proj_name: "wall_e func testing"
   offline: true
-  dir: "./assert"
   tags: ["wall_e", "example"]

@@ -2,6 +2,7 @@ import torch
 from omegaconf import OmegaConf
 
 from ..util.dl_util import get_model_info
+from ..common.util import now
 
 
 class RunnerState:
@@ -13,6 +14,8 @@ class RunnerState:
 
     def __post_init__(self, runner):
         cfg = runner.cfg
+        self.run_timestamp = now()
+        cfg.run_timestamp = self.run_timestamp
         self.ds_config = OmegaConf.select(cfg, "training.ds_config", default = None)
         self.epochs = runner.epochs if runner.epochs is not None else 1
         self.resume_from = OmegaConf.select(cfg, "training.resume_from", default = None)

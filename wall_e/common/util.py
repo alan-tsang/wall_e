@@ -10,6 +10,51 @@ import functools
 import time
 from typing import Optional, Callable, Any
 
+
+class Namespace(dict):
+    """A dict subclass with attribute (dot) access."""
+
+    # 支持嵌套字典自动转 Namespace
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for k, v in self.items():
+
+            if isinstance(v, dict) and not isinstance(v, Namespace):
+                self[k] = Namespace(v)
+
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(f"'Namespace' object has no attribute '{name}'")
+
+    def __setattr__(self, name, value):
+        if isinstance(value, dict) and not isinstance(value, Namespace):
+            value = Namespace(value)
+        self[name] = value
+
+    def __delattr__(self, name):
+        try:
+            del self[name]
+        except KeyError:
+            raise AttributeError(f"'Namespace' object has no attribute '{name}'")
+
+    def __repr__(self):
+        return f"Namespace({super().__repr__()})"
+
+
+def set_proxy():
+    path = '/home/alan/desktop/project/get_windows_ip.sh'
+    cmd = f"bash {path}"
+    # 运行
+    import subprocess
+    result = subprocess.check_output(
+        cmd.split(), stderr = subprocess.STDOUT,
+        timeout = 30, universal_newlines = True
+        )
+    return result.rstrip()
+
+
 def timeit(
     func: Optional[Callable] = None, 
     *,
@@ -112,7 +157,6 @@ def better_dict_4_print(_dict):
 def set_proxy():
     pass
 
-
 def set_seed(seed: int = 0):
     """设置随机数种子"""
     import random
@@ -123,24 +167,6 @@ def set_seed(seed: int = 0):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-
-
-class Namespace:
-    """
-    Examples:
-        > args_dict = {'name': 'John', 'age': 25, 'city': 'Example City'}
-        > namespace_obj = Namespace(args_dict)
-    """
-
-    def __init__(self, args: dict):
-        for k, v in args.items():
-            setattr(self, k, v)
-
-def first_call_warning(key, message: str):
-    """生成一个函数，该函数在首次调用时触发警告，后续调用无操作"""
-    if key not in _warning_cache:
-        warnings.warn(message)
-        _warning_cache.add(key)
 
 
 def now():

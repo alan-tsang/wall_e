@@ -3,9 +3,9 @@ import sys
 import logging
 from typing import Optional
 
-import torch
 import torch.distributed as dist
 
+from ..common.registry import registry
 from ..dist import master_only
 from ..dist import is_main_process, get_rank
 from ..common.mixin import ManagerMixin
@@ -44,8 +44,8 @@ class Logger(ManagerMixin):
             level: str,
             rank_level: Optional[str] = None,  # 非主进程的日志级别
             to_file: bool = True,
-            folder: str = "./logs",
-            run_name: str = "",
+            folder: str = "./run",
+            run_name: str = "default",
             **kwargs
     ):
         super().__init__(name, **kwargs)
@@ -92,10 +92,12 @@ class Logger(ManagerMixin):
         为所有进程添加文件处理器，使用主进程创建的文件名
         """
         if self.is_master:
+            timestamp = registry.get("cfg.run_timestamp")
+            folder = os.path.join(folder, run_name, timestamp)
             os.makedirs(folder, exist_ok = True)
             file_path = os.path.join(
                 folder,
-                f"{run_name + '_' if run_name else ''}{now()}.log"
+                "run.log"
             )
             open(file_path, 'a').close()
         else:
