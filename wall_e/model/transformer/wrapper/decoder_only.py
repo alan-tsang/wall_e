@@ -1,7 +1,7 @@
 from torch import nn
 
 from ....common.registry import registry
-from ..module import RotaryMultiDotProductAttention
+from ..module import RotaryMultiDotProductionAttention
 from ..module import MLP
 from ..module import RMSNorm
 from ..module import Embed
@@ -46,7 +46,7 @@ class DecoderOnlyLayer(nn.Module):
     def __init__(self, d, n, max_len, dropout, d_ff):
         super().__init__()
         # @dropout attention
-        self.attention = RotaryMultiDotProductAttention(
+        self.attention = RotaryMultiDotProductionAttention(
             d = d,
             n = n,
             max_len = max_len,
@@ -83,5 +83,6 @@ class DecoderOnlyLayer(nn.Module):
         hidden_states = self.norm2(residual + hidden_states)
 
         past_key_value = attn_outputs[1]
+
 
         return dict(hidden_states=hidden_states, past_key_value=past_key_value, attn_weight=attn_weight)

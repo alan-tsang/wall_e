@@ -1,3 +1,4 @@
 from .encoder import TransformerForSequenceClassification
 from .encoder_decoder import TransformerForConditionalGeneration
 from .decoder_only import TransformerForCausalLM
+from .decoder import TransformerDecoderForSeq2Seq

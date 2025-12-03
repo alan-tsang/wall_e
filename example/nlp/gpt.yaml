@@ -1,0 +1,84 @@
+# The name of the experiment
+run_name: 'pretrain_smiles_decoder'
+run_dir: './run'
+run_description: "AI4Sci: use a transformer to pretrain smiles, a chemical string representation."
+
+model:
+  type: "TransformerForCausalLM"
+  num_layers: 12
+  d: 768
+  n: 12
+  max_len: 128
+  d_ff: 3072
+  dropout: 0.1
+metric:
+  # 自定义metric可以按照model保存在这
+
+# Support Parameters
+optimizer:
+  # 使用的是AdamW
+  lr: 3e-4
+  weight_decay: 0.01
+scheduler:
+  type: "LinearWarmupCosineLRScheduler"
+  min_lr: 3e-5
+  max_lr: 3e-4
+  warmup_rate: 0.25
+  warmup_start_lr: 1e-5
+training:
+  epochs: 1
+  batch_size: 48
+  # ds_config: 'deepspeed.json'
+  is_sweep: false
+  gradient_accumulation: 8
+  resume_from: null
+  # load_from: './run/pretrain_smiles_decoder/2025-10-25_03-03-46/checkpoint/final.pt'
+  # load_from: "/root/private_data/user/zzc/project/beta/wall_e/example/nlp/run/pretrain smiles decoder/2025-10-24_16-35-31/checkpoint/epoch_1-batch_8000.pt"
+  # load_from: "./run/pretrain smiles decoder/2025-10-24_11-48-40/checkpoint/epoch_1-batch_22000.pt"
+#  activation_checkpoint: [
+#    'transformer.encoder.layers.0',
+#    'transformer.encoder.layers.1',
+#    'transformer.decoder.layers.0',
+#    'transformer.layers.1'
+#  ]
+  grad_clip: null
+  fp16: false
+
+  print_model: false
+  progress_show:
+    loss: false
+    accuracy: true
+    validity: true
+    novelty: true
+    uniqueness: true
+  valid_begin_epoch: 1
+  valid_interval_epoch: 1
+  valid_begin_iter: 4000
+  valid_interval_iter: 100
+
+  test_begin_epoch: 1
+  test_interval_epoch: 1
+  test_begin_iter: 4000
+  test_interval_iter: 500
+
+  progress_every_n_epochs: 1
+  progress_every_n_batches: 8
+
+log:
+  to_file: true
+  level: "INFO"
+  rank_level: "WARNING"
+pt:
+  enable: true
+  best_monitor:
+    loss: false
+  topk: 5
+  begin_epoch: 1
+  epoch_interval: 1
+  begin_batch: 4000
+  batch_interval: 1000
+wandb:
+  enable: true
+  proj_name: "wall_e example - gpt"
+  offline: true
+  tags: ["wall_e", "example"]

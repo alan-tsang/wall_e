@@ -101,7 +101,7 @@ class GreedyStrategy(GenerationStrategy):
                 next_logits[done, self.config.eos_token_id] = 0
             next_tokens = torch.argmax(next_logits, dim=-1, keepdim=True)
             generated_ids = torch.cat([generated_ids, next_tokens], dim=-1)
-            new_attention = torch.zeros(batch_size, 1, device=device, dtype=attention_mask.dtype)
+            new_attention = torch.ones(batch_size, 1, device=device, dtype=attention_mask.dtype)
             attention_mask_current = torch.cat([attention_mask_current, new_attention], dim=1)
             if self.config.eos_token_id is not None:
                 eos_hit = next_tokens.view(-1) == self.config.eos_token_id
@@ -143,7 +143,7 @@ class SampleStrategy(GenerationStrategy):
             probs = torch.softmax(logits, dim=-1)
             next_tokens = torch.multinomial(probs, num_samples=1)
             generated_ids = torch.cat([generated_ids, next_tokens], dim=-1)
-            new_attention = torch.zeros(batch_size, 1, device=device, dtype=attention_mask.dtype)
+            new_attention = torch.ones(batch_size, 1, device=device, dtype=attention_mask.dtype)
             attention_mask_current = torch.cat([attention_mask_current, new_attention], dim=1)
             if self.config.eos_token_id is not None:
                 eos_hit = next_tokens.view(-1) == self.config.eos_token_id
@@ -222,13 +222,14 @@ class StochasticBeamStrategy(GenerationStrategy):
             if past_key_values is not None:
                 next_past_key_values = gather_beam_states(next_past_key_values, beam_indices, batch_size, self.config.num_beams)
             past_key_values = next_past_key_values
-            new_attention = torch.zeros_like(token_indices.view(-1, 1))
+            new_attention = torch.ones_like(token_indices.view(-1, 1))
             attention_mask = torch.cat([attention_mask, new_attention], dim=1)
             if self.config.eos_token_id is not None:
                 eos_hit = token_indices.view(-1) == self.config.eos_token_id
                 done = done | eos_hit
                 if self.config.early_stopping and done.all():
                     break
+
         beam_scores = beam_scores.view(batch_size, self.config.num_beams)
         _, best_indices = beam_scores.max(dim=1)
         best_sequences = generated_ids.view(batch_size, self.config.num_beams, -1)[

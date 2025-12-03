@@ -3,6 +3,7 @@ from typing import Dict, Optional, Union
 
 from .logger import Logger
 
+
 def print_log(msg,
               logger: Optional[Union[Logger, str]] = None,
               level='INFO') -> None:
