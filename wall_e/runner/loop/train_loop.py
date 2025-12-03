@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 import torch
+import torch.distributed as dist
 from omegaconf import OmegaConf
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import DataLoader
@@ -142,6 +143,8 @@ class TrainLoop(BaseLoop):
         self._iter = 0
 
         for idx, data_batch in enumerate(self.dataloader):
+            if self.runner.state.stop_training:
+                break
             if isinstance(self.runner.train_data_loader.sampler, DistributedSampler):
                 self.runner.train_data_loader.sampler.set_epoch(self.runner.state.current_epoch)
             data_batch = move_data_to_device(data_batch, self.runner.state.device)

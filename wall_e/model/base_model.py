@@ -40,7 +40,7 @@ class BaseModel(nn.Module, ABC):
         Maybe this should expect no mismatch in the model keys and the checkpoint keys.
         """
 
-        checkpoint = torch.load(cached_path, map_location="cpu")
+        checkpoint = torch.load(cached_path, map_location="cpu", weights_only=False)
 
         if "model" in checkpoint.keys():
             state_dict = checkpoint["model"]

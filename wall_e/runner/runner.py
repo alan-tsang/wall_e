@@ -17,7 +17,7 @@ from torch.utils.data.distributed import DistributedSampler
 from .base_runner import RunnerBase
 from .state import RunnerState
 from .. import BaseModel, Evaluator
-from ..callback import (CheckpointCallback, EpochSummaryCallBack,
+from ..callback import (CheckpointCallback, SummaryCallBack,
                         ProcessCallBack, WandbCallback)
 from ..callback.base_callback import BaseCallBack
 from ..common.registry import registry
@@ -204,13 +204,15 @@ class Runner(RunnerBase):
         super().before_fit()
         self.log_initial_info()
         # 将配置文件写入到实验目录中
-        cfg_write_folder = os.path.join(
-            self.cfg.run_dir,
-            self.cfg.run_name,
-            self.state.run_timestamp
-        )
-        from omegaconf import OmegaConf
-        OmegaConf.save(self.cfg, f'{cfg_write_folder}/cfg.yaml')
+        if self.is_main_process:
+            cfg_write_folder = os.path.join(
+                self.cfg.run_dir,
+                self.cfg.run_name,
+                self.state.run_timestamp
+            )
+            os.makedirs(cfg_write_folder, exist_ok=True)
+            from omegaconf import OmegaConf
+            OmegaConf.save(self.cfg, f'{cfg_write_folder}/cfg.yaml')
 
     def log_initial_info(self):
         """
@@ -230,6 +232,7 @@ class Runner(RunnerBase):
 
     def after_fit(self):
         super().after_fit()
+        self.cleanup_resources()
 
     def cleanup_resources(self):
         self.logger.close_file_handler()
@@ -402,7 +405,7 @@ class Runner(RunnerBase):
         - WandbCallback: Weights & Biases日志回调（可选）
         - CheckpointCallback: 训练状态保存回调
         """
-        epoch_summary_callback = EpochSummaryCallBack(self)
+        summary_callback = SummaryCallBack(self)
         progress_callback = ProcessCallBack(self)
         wandb_callback = None
         if OmegaConf.select(self.cfg, "wandb.enable", default = True):
@@ -429,7 +432,7 @@ class Runner(RunnerBase):
             progress_callback,
             checkpoint_callback,
             wandb_callback,
-            epoch_summary_callback,
+            summary_callback,
         ]
         callbacks.extend(self.callbacks)
         self.register_callbacks(callbacks)

@@ -1,11 +1,10 @@
 from torch import nn
 
 from ....common.registry import registry
-from ..module import RotaryMultiDotProductAttention
+from ..module import RotaryMultiDotProductionAttention, MHAForCrossFusion
 from ..module import MLP
 from ..module import RMSNorm
 from ..module import Embed
-
 
 @registry.register_model("TransformerDecoderForSeq2Seq")
 class TransformerDecoderForSeq2Seq(nn.Module):
@@ -36,9 +35,9 @@ class TransformerDecoderForSeq2Seq(nn.Module):
                 encoder_attention_mask=encoder_attention_mask,
                 past_key_value=past_key_values[i]
             )
-            hidden_states = layer_outputs.hidden_states
-            next_past_key_values.append(layer_outputs.past_key_value)
-            all_attentions.append(layer_outputs.attention)
+            hidden_states = layer_outputs["hidden_states"]
+            next_past_key_values.append(layer_outputs["past_key_value"])
+            all_attentions.append(layer_outputs["attn_weight"])
             all_hidden_states.append(hidden_states)
 
         hidden_states = self.norm(hidden_states)
@@ -53,16 +52,15 @@ class TransformerDecoderForSeq2Seq(nn.Module):
 class TransformerDecoderLayerForSeq2Seq(nn.Module):
     def __init__(self, d, n, max_len, dropout, d_ff):
         super().__init__()
-        self.self_attn = RotaryMultiDotProductAttention(
+        self.self_attn = RotaryMultiDotProductionAttention(
             d = d,
             n = n,
             max_len = max_len,
             dropout = dropout
         )
-        self.cross_attn = RotaryMultiDotProductAttention(
+        self.cross_attn = MHAForCrossFusion(
             d = d,
             n = n,
-            max_len = max_len,
             dropout = dropout
         )
         self.mlp = MLP(d_ff = d_ff, d = d)
@@ -94,9 +92,9 @@ class TransformerDecoderLayerForSeq2Seq(nn.Module):
         # ===== Self-Attention (with cache) =====
         residual = hidden_states
         self_attn_outputs, self_attn_weights = self.self_attn(
-            query=hidden_states,
-            key=hidden_states,
-            value=hidden_states,
+            q=hidden_states,
+            k=hidden_states,
+            v=hidden_states,
             attention_mask=attention_mask,
             past_key_value=past_key_value
         )
@@ -107,11 +105,10 @@ class TransformerDecoderLayerForSeq2Seq(nn.Module):
         if encoder_hidden_states is not None:
             residual = hidden_states
             cross_attn_outputs, cross_attn_weights = self.cross_attn(
-                query=hidden_states,
-                key=encoder_hidden_states,
-                value=encoder_hidden_states,
+                q=hidden_states,
+                k=encoder_hidden_states,
+                v=encoder_hidden_states,
                 attention_mask=encoder_attention_mask,
-                past_key_value=None
             )
             hidden_states = self.cross_attn_layer_norm(residual + cross_attn_outputs[0])
         else:
@@ -125,5 +122,8 @@ class TransformerDecoderLayerForSeq2Seq(nn.Module):
         return dict(
             hidden_states=hidden_states,
             past_key_value=next_self_key_value,
-            attention=dict(self_attn=self_attn_weights, cross_attn=cross_attn_weights)
+            attn_weight=dict(
+                self_attn_weight=self_attn_weights,
+                cross_attn_weight=cross_attn_weights
+            )
         )

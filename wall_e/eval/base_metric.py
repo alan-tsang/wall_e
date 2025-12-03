@@ -165,7 +165,7 @@ class DumpResults(BaseMetric, ABC):
     """Dump model predictions to a pickle file for offline evaluation.
 
     Args:
-        out_file_path (str): Path of the dumped file. The data wil be stored
+        output_dir (str): Path of the dumped file. The data wil be stored
         as pickle file.
         collect_device (str): Device name used for collecting results from
             different ranks during distributed training. Must be 'cpu' or
@@ -177,13 +177,12 @@ class DumpResults(BaseMetric, ABC):
     """
 
     def __init__(self,
-                 out_file_path: str,
+                 output_dir: str,
                  collect_device: str = 'cpu',
                  collect_dir: Optional[str] = None) -> None:
         super().__init__(
             collect_device=collect_device, collect_dir=collect_dir)
-        self.out_file_path = out_file_path.strip('/') + '/'
-        print(self.out_file_path)
+        self.output_dir = output_dir.strip('/') + '/'
 
     @abstractmethod
     def process(self, data_batch: Any, predictions: dict) -> None:
@@ -192,7 +191,7 @@ class DumpResults(BaseMetric, ABC):
     def compute_metrics(self, results: list) -> dict:
         """Save results to a pickle file with epoch/batch in filename if available."""
         folder = os.path.join(self.runner.cfg.run_dir, self.runner.cfg.run_name
-                     , self.state.run_timestamp, self.out_file_path)
+                              , self.state.run_timestamp, self.output_dir)
         os.makedirs(folder, exist_ok=True)
         suffix = []
 

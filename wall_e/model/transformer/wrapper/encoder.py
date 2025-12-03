@@ -1,7 +1,7 @@
 from torch import nn
 
 from ....common.registry import registry
-from ..module import RotaryMultiDotProductAttention
+from ..module import RotaryMultiDotProductionAttention
 from ..module import MLP
 from ..module import RMSNorm
 from ..module import Embed
@@ -59,7 +59,7 @@ class Encoder(nn.Module):
 class EncoderLayer(nn.Module):
     def __init__(self, d, n, max_len, dropout, d_ff):
         super().__init__()
-        self.self_attn = RotaryMultiDotProductAttention(
+        self.self_attn = RotaryMultiDotProductionAttention(
             d=d,
             n=n,
             max_len=max_len,

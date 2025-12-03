@@ -254,8 +254,14 @@ if __name__ == '__main__':
     from wall_e.util.dl_util import get_model_info
     # net.load_checkpoint('example/transformer_to_copy_str.pth')
 
-    valid_evaluator = Evaluator([ValidMetric(), DumpValidResult(f'result/valid')])
-    test_evaluator = Evaluator([TestMetric(), DumpTestResult(f'result/test')])
+    valid_evaluator = Evaluator([
+        ValidMetric(),
+        DumpValidResult(output_dir = f'result/valid')
+    ])
+    test_evaluator = Evaluator([
+        TestMetric(),
+        DumpTestResult(output_dir = f'result/test')
+    ])
 
     runner = Runner(
         train_data_loader = bench_loader,
@@ -274,15 +280,3 @@ if __name__ == '__main__':
     runner.fit()
     runner.test()
     runner.cleanup_resources()
-
-    ############# test #############
-    # 1. online: model load_model_checkpoint-> runner.test()
-    # runner.test()
-    # 2. offline: 现在的数据变换逻辑还是过于复杂了，容易出错
-    # data_samples = load('example/test_result_epoch_4.pkl')
-    # data_list = []
-    # for batch in bench_loader:
-    #     data_list.append(batch)
-    # evaluator_offline = Evaluator([MyMetric2()])
-    # #
-    # print(evaluator_offline.offline_evaluate(data_samples, data_list, chunk_size = 10))

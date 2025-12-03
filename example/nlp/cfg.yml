@@ -83,6 +83,6 @@ pt:
   batch_interval: 10
 wandb:
   enable: true
-  proj_name: "wall_e func testing"
+  proj_name: "wall_e example: copy str"
   offline: true
   tags: ["wall_e", "example"]

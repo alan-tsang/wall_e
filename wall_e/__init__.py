@@ -1,6 +1,6 @@
 from .dataset import (BaseMapDataset, BaseIterableDataset, BaseDataset)
 from .model import (BaseModel, BasePreTrainedModel)
-from .eval import  (Evaluator, BaseMetric, DumpResults)
+from .eval import (Evaluator, BaseMetric, DumpResults)
 from .runner import Runner
 from .config import load_cfg
 from .dist import *
