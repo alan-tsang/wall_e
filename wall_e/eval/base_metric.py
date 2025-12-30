@@ -35,12 +35,9 @@ class BaseMetric(metaclass=ABCMeta):
             from different ranks. This argument should only be configured when
             ``collect_device`` is 'cpu'. Defaults to None.
     """
-
-    default_prefix: Optional[str] = None
-
     def __init__(self,
+                 prefix: str = None,
                  collect_device: str = 'cpu',
-                 prefix: Optional[str] = None,
                  collect_dir: Optional[str] = None) -> None:
 
         if collect_dir is not None and collect_device != 'cpu':
@@ -52,14 +49,12 @@ class BaseMetric(metaclass=ABCMeta):
         self.state = None
         self.collect_device = collect_device
         self.results: List[Any] = []
-        self.prefix = prefix or self.default_prefix
+        self.prefix = prefix
         self.collect_dir = collect_dir
 
-        if self.prefix is None:
-            print(
-                'The prefix is not set in metric class '
-                f'{self.__class__.__name__}.'
-            )
+        # metric_name -> greater_is_better
+        # default empty; subclasses should fill this if they want best tracking.
+        self.monitor_metrics: dict[str, bool] = {}
 
     @property
     def dataset_meta(self) -> Optional[dict]:
@@ -94,6 +89,16 @@ class BaseMetric(metaclass=ABCMeta):
             dict: The computed metrics. The keys are the names of the metrics,
             and the values are corresponding results.
         """
+
+    def _apply_prefix(self, metrics: dict) -> dict:
+        """Apply self.prefix to metric keys (same logic used in evaluate)."""
+        if not self.prefix:
+            return metrics
+        return {'/'.join((self.prefix, k)): v for k, v in metrics.items()}
+
+    def get_monitor_metrics(self) -> dict:
+        """Return the monitor_metrics map with prefix applied (if any)."""
+        return self._apply_prefix(dict(self.monitor_metrics))
 
     def evaluate(self, size: int) -> dict:
         """Evaluate the model performance of the whole dataset after processing
@@ -181,6 +186,7 @@ class DumpResults(BaseMetric, ABC):
                  collect_device: str = 'cpu',
                  collect_dir: Optional[str] = None) -> None:
         super().__init__(
+            prefix = '__skip__',
             collect_device=collect_device, collect_dir=collect_dir)
         self.output_dir = output_dir.strip('/') + '/'
 

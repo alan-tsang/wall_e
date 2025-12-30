@@ -41,6 +41,7 @@ class SummaryCallBack(BaseCallBack):
         """测试阶段结束后记录摘要"""
         self._test_end_time = datetime.now()
         self._log_summary("Test", self._test_start_time, self._test_end_time)
+        # self.runner.logger.just_print('-' * 60)
     
     def _log_summary(self, phase_name, start_time, end_time):
         """
@@ -58,7 +59,7 @@ class SummaryCallBack(BaseCallBack):
         elapsed_seconds = elapsed_time.total_seconds()
         hours, remainder = divmod(elapsed_seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
-        time_str = f"{int(hours):02}:{int(minutes):02}:{seconds:.3f}"
+        time_str = f"{int(hours):02}h:{int(minutes):02}m:{round(seconds)}s"
         
         # 获取指标信息
         metrics = registry.get('metric')
@@ -70,14 +71,24 @@ class SummaryCallBack(BaseCallBack):
         # 根据不同阶段输出不同格式的日志
         if phase_name == "Epoch":
             self.runner.logger.info(
-                f"Epoch {self.runner.state.current_epoch + 1} 用时: {time_str}s 总结：{info_items}\n-----------"
+                f"Epoch {self.runner.state.current_epoch + 1} 用时: {time_str}"
             )
+            self.runner.logger.info(
+                f"总结: {info_items}"
+            )
+
         elif phase_name == "Validation":
             self.runner.logger.info(
-                f"验证阶段 用时: {time_str}s 总结：{info_items}\n-----------"
+                f"验证阶段，用时: {time_str}"
             )
+            self.runner.logger.info(
+                f"总结: {info_items}"
+            )
+
         elif phase_name == "Test":
             self.runner.logger.info(
-                f"测试阶段 用时: {time_str}s 总结：{info_items}\n-----------"
+                f"测试阶段 | 用时: {time_str} | 总结: {info_items}"
+                # f"------------------------------------------------------------"
             )
+
             

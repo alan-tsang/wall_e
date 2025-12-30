@@ -84,7 +84,7 @@ class EarlyStopCallBack(BaseCallBack):
                     "请检查 Runner 是否正确维护了 current_step 状态。"
                 )
             return self.runner.state.current_step
-    
+
     def _get_metric_value(self):
         """获取监控的指标值"""
         return registry.get(f"metric.{self.monitor}")

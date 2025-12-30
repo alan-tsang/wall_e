@@ -149,7 +149,7 @@ class DemoNet(BaseModel):
         )
 
     def compute_loss(self, logit, label) -> dict:
-        loss = self.criterion(logit.view(-1, logit.size(-1)), label.view(-1))
+        loss = self.criterion(logit.reshape(-1, logit.shape[-1]), label.reshape(-1))
         return dict(loss = loss)
 
 
@@ -158,6 +158,7 @@ class ValidMetric(BaseMetric):
         super(ValidMetric, self).__init__(collect_device, collect_dir = collect_dir)
         self.dataset_meta = 'my_dataset'
         self.prefix = 'valid'
+        self.monitor_metrics = {'acc': True}
 
     def process(self, data_batch, data_samples) -> None:
         pred = data_samples["logits_ids"].argmax(dim = -1)
@@ -218,7 +219,7 @@ if __name__ == '__main__':
     import argparse
 
     arg = argparse.ArgumentParser()
-    arg.add_argument('--cfg', type = str, default = './cfg.yml')
+    arg.add_argument('--cfg', default = 'config/config.yaml')
     args, _ = arg.parse_known_args()
     cfg_path = args.cfg
     cfg = load_cfg(cfg_path)
@@ -256,11 +257,11 @@ if __name__ == '__main__':
 
     valid_evaluator = Evaluator([
         ValidMetric(),
-        DumpValidResult(output_dir = f'result/valid')
+        # DumpValidResult(output_dir = f'result/valid')
     ])
     test_evaluator = Evaluator([
         TestMetric(),
-        DumpTestResult(output_dir = f'result/test')
+        # DumpTestResult(output_dir = f'result/test')
     ])
 
     runner = Runner(
@@ -274,7 +275,10 @@ if __name__ == '__main__':
         test_evaluator = test_evaluator,
         cfg = cfg,
     )
-    callbacks = [EarlyStopCallBack(runner = runner, monitor = "loss")]
+
+    callbacks = [EarlyStopCallBack(runner = runner, monitor = "loss",
+                                   delta = 0.01, patience = 2, greater_is_better = False,
+                                   mode = "epoch")]
     runner.extend_callbacks(callbacks)
 
     runner.fit()

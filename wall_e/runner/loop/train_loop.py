@@ -12,6 +12,7 @@ from ...logging import print_log
 from ...util.dl_util import get_batch_n
 from ...common.registry import registry
 
+
 class TrainLoop(BaseLoop):
     """Loop for epoch-based training.
 
@@ -53,14 +54,13 @@ class TrainLoop(BaseLoop):
         self.test_interval_epoch = test_interval_epoch
         self.test_begin_iter = test_begin_iter
         self.test_interval_iter = test_interval_iter
-        
+
         self.cfg = self.runner.cfg
         # This attribute will be updated by `EarlyStopCallBack`
         # when it is enabled.
 
         self.scheduler = self.setup_scheduler()
         self.runner.scheduler = self.scheduler
-        
 
         self.__post_init__()
 
@@ -109,7 +109,6 @@ class TrainLoop(BaseLoop):
         # elif self.runner.state.load_from:
         #     self.load()
 
-
     def run(self) -> torch.nn.Module:
         """Launch training."""
         self.runner.before_train()
@@ -121,7 +120,7 @@ class TrainLoop(BaseLoop):
 
             if (self.runner.valid_loop is not None
                     and self._epoch >= self.valid_begin_epoch
-                    and ((self._epoch - self.valid_interval_epoch)  % self.valid_interval_epoch == 0
+                    and ((self._epoch - self.valid_interval_epoch) % self.valid_interval_epoch == 0
                          or self._epoch == self._max_epochs)):
                 self.runner.logger.info(f"验证 at epoch: {self._epoch}...")
                 self.runner.valid_loop.run()
@@ -150,13 +149,13 @@ class TrainLoop(BaseLoop):
             data_batch = move_data_to_device(data_batch, self.runner.state.device)
             with self.maybe_autocast(self.is_16bit):
                 self.runner.state.current_step = self._iter + 1
-                self.run_iter(idx, data_batch) # type: ignore
+                self.run_iter(idx, data_batch)  # type: ignore
             self._iter += 1
-            
+
             iter_now = self._iter + self._epoch * self._iters_per_epoch
             if (self.runner.valid_loop is not None
                     and iter_now >= self.valid_begin_iter
-                    and ((iter_now - self.valid_begin_iter)  % self.valid_interval_iter == 0
+                    and ((iter_now - self.valid_begin_iter) % self.valid_interval_iter == 0
                          or iter_now == self._max_iters)):
                 self.runner.logger.info(f"验证 at iter: {iter_now}...")
                 self.runner.valid_loop.run()
@@ -168,10 +167,8 @@ class TrainLoop(BaseLoop):
                 self.runner.logger.info(f"测试 at iter: {iter_now}...")
                 self.runner.test_loop.run()
 
-
         self.runner.after_running_epoch()
         self._epoch += 1
-
 
     def run_iter(self, idx, data_batch: dict[str, Sequence]) -> None:
         """Iterate one min-batch.
@@ -192,8 +189,8 @@ class TrainLoop(BaseLoop):
 
         # 分布式环境下同步跳过的决策
         if torch.distributed.is_initialized():
-            skip_batch_tensor = torch.tensor([skip_batch], device=self.runner.device)
-            torch.distributed.all_reduce(skip_batch_tensor, op=torch.distributed.ReduceOp.MAX)
+            skip_batch_tensor = torch.tensor([skip_batch], device = self.runner.device)
+            torch.distributed.all_reduce(skip_batch_tensor, op = torch.distributed.ReduceOp.MAX)
             skip_batch = skip_batch_tensor.item()
 
         if skip_batch:
@@ -204,18 +201,16 @@ class TrainLoop(BaseLoop):
 
         self.runner.after_running_batch()
 
-
     @staticmethod
     def register_model_output(model_output):
         # 注册并报告所有包含"loss"的键值
         for key, value in model_output.items():
             if "loss" in key and isinstance(value, torch.Tensor):
                 registry.register(f"metric.{key}", value.item())
-                
-                if registry.get("cfg.training.is_sweep", False):
-                    import ray
-                    ray.train.report(metrics={key: value.item()}) # type: ignore
 
+                if registry.get("cfg.training.enable_tune", False):
+                    import ray
+                    ray.train.report(metrics = {key: value.item()})  # type: ignore
 
     def setup_scheduler(self):
         scheduler = None
@@ -254,16 +249,16 @@ class TrainLoop(BaseLoop):
         if self.runner.state.accumulation_count % self.accumulation_steps != 0:
             return
 
-        # 梯度裁剪（需在原始梯度空间操作）
         if self.max_norm is not None:
             # 梯度裁剪
-            # see https://docs.pytorch.org/docs/stable/notes/amp_examples.html#amp-examples, Gradient accumulation部分，裁剪应该应用于原始的非缩放梯度
+            # see https://docs.pytorch.org/docs/stable/notes/amp_examples.html#amp-examples
+            # Gradient accumulation部分，裁剪应该应用于原始的非缩放梯度
             if scaler:
                 scaler.unscale_(self.runner.optimizer)  # 解除混合精度缩放
             torch.nn.utils.clip_grad_norm_(
                 self.runner.model.parameters(),
-                max_norm=self.max_norm,
-                norm_type=2
+                max_norm = self.max_norm,
+                norm_type = 2
             )
 
         if scaler:
@@ -279,7 +274,6 @@ class TrainLoop(BaseLoop):
             self.runner.optimizer.zero_grad()
         self.runner.state.accumulation_count = 0
 
-
     def resume(self):
         """
         跳过data_loader可能很耗时, 因此保守实现：恢复epoch，随机数，优化器，model，cfg
@@ -287,12 +281,9 @@ class TrainLoop(BaseLoop):
         if self.runner.checkpoint_callback is None:
             raise RuntimeError("未设置checkpoint callback，无法复原训练状态！")
         start_epoch, start_batch = self.runner.checkpoint_callback \
-            .load_checkpoint(self.runner.state.resume_from) # type: ignore
+            .load_checkpoint(self.runner.state.resume_from)  # type: ignore
         self._epoch = start_epoch
         self.runner.state.current_epoch = self._epoch
-        # self._iter = start_batch
-        # self.runner.state.current_step = self._iter
-        # print_log(f'恢复点epoch: {start_epoch}, iter: {start_batch}', "current")
         print_log(f'恢复点 epoch: {start_epoch}', "current")
 
     def load(self):
@@ -301,4 +292,3 @@ class TrainLoop(BaseLoop):
             self.runner.model.module.load_checkpoint(self.runner.state.load_from)
         else:
             self.runner.model.load_checkpoint(self.runner.state.load_from)
-

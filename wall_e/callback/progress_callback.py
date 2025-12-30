@@ -10,9 +10,15 @@ from ..util.dl_util import get_batch_n
 
 @registry.register_callback("progress")
 class ProcessCallBack(BaseCallBack):
+    """\
+    打印训练进度，以及 registry 中 metric.* 的值。
+
+    说明：
+    - 不再依赖 config 里手动指定 metric key；进度条会从 registry.metric.* 自动发现。
+    - greater_is_better 的方向信息来自 registry.metric_meta.*，由 BaseMetric.monitor_metrics 提供。
+      （当 meta 缺失时，默认按“越小越好”处理）
     """
-    打印训练进度，以及train_monitor监控的值
-    """
+
     def __init__(self, runner):
         super().__init__(runner)
 
@@ -20,43 +26,76 @@ class ProcessCallBack(BaseCallBack):
         self.every_n_epoch = OmegaConf.select(
             self.runner.cfg,
             "training.progress_every_n_epochs",
-            default = 1
+            default=1,
         )
         self.every_n_batches = OmegaConf.select(
             self.runner.cfg,
             "training.progress_every_n_batches",
-            default = 1
+            default=1,
         )
+
+        # Track already attached meters so we can dynamically add more later
+        self._meter_by_key: dict[str, AverageMeter] = {}
+
         self.__post_init__()
 
     def __post_init__(self):
-        train_avg_meter = []
-        train_monitors = OmegaConf.select(
-            self.runner.cfg,
-            "training.progress_show",
-            default = {"loss": False}
-        )
-        for key, value in train_monitors.items():
-            train_avg_meter.append(
-                AverageMeter(monitor = key, greater_is_better = value)
-            )
         self.progress_meter = ProgressMeter(
             self.runner.epochs,
             int(get_batch_n(self.runner.train_data_loader)),
-            train_avg_meter
+            meters=[],
         )
+        self._refresh_meters_from_registry()
+
+    def _discover_metric_keys(self) -> list[str]:
+        """Discover available metric keys under registry.state.metric."""
+        metric_state = registry.get("metric", default=None, no_warning=True)
+        if metric_state is None:
+            return []
+        keys = [str(k) for k in metric_state.keys()]
+
+        # stable order: loss* first, then alphabetical
+        loss_keys = sorted([k for k in keys if "loss" in k.lower()])
+        other_keys = sorted([k for k in keys if k not in loss_keys])
+        return loss_keys + other_keys
+
+    def _refresh_meters_from_registry(self) -> None:
+        """Ensure every discovered metric key has a corresponding meter."""
+        keys = self._discover_metric_keys()
+
+        for key in keys:
+            if key in self._meter_by_key:
+                continue
+            # infer direction from meta registered by Evaluator/BaseMetric
+            greater_is_better = bool(
+                registry.get(f"metric_meta.{key}", default=False, no_warning=True)
+            )
+            meter = AverageMeter(
+                monitor=key,
+                greater_is_better=greater_is_better,
+            )
+            self._meter_by_key[key] = meter
+            self.progress_meter.meters.append(meter)
 
     def after_running_batch(self):
+        # Meters might be empty during early iterations; try to discover on the fly.
+        self._refresh_meters_from_registry()
+
         for meter in self.progress_meter.meters:
-            if registry.get(f"metric.{meter.monitor}"):
-                meter.update(registry.get(f"metric.{meter.monitor}"))
-            else:
+            value = registry.get(f"metric.{meter.monitor}", default=None, no_warning=True)
+            if value is None:
                 meter.update(float("nan"))
+            else:
+                meter.update(float(value))
 
         current_epoch = self.runner.state.current_epoch
         current_step = self.runner.state.current_step
-        if self.every_n_batches and current_step % self.every_n_batches == 0 and\
-            self.every_n_epoch and current_epoch % self.every_n_epoch == 0:
+        if (
+            self.every_n_batches
+            and current_step % self.every_n_batches == 0
+            and self.every_n_epoch
+            and current_epoch % self.every_n_epoch == 0
+        ):
             self.progress_meter.display(current_epoch, current_step, self.logger)
 
 
@@ -71,35 +110,35 @@ class ProgressMeter:
 
     def display(self, epoch_i, batch_i, logger):
         current_time = datetime.now()
-        if not hasattr(self, 'start_time'):
+        if not hasattr(self, "start_time"):
             self.start_time = current_time
-        # 计算 elapsed_time，并转换为秒数
-        if hasattr(self, 'start_time'):
-            elapsed_time = (current_time - self.start_time).total_seconds()
-        else:
-            elapsed_time = 0
 
-        percent = math.ceil(100.0 * (batch_i) / self.batch_n)
-        speed = 0.0  # 默认值
-        if batch_i > 0 and elapsed_time > 0:  # 比较浮点数
+        elapsed_time = (current_time - self.start_time).total_seconds()
+
+        percent = math.ceil(100.0 * (batch_i) / self.batch_n) if self.batch_n else 100
+        speed = 0.0
+        if batch_i > 0 and elapsed_time > 0:
             speed = batch_i / elapsed_time
+
         progress_length = 15
-        filled_length = min(math.ceil(progress_length * (batch_i + 1) / self.batch_n), progress_length)
-        bar = '█' * filled_length + '░' * (progress_length - filled_length)
-        remaining_time = 0.0  # 默认值
-        if batch_i > 0 and elapsed_time > 0:  # 比较浮点数
+        filled_length = (
+            min(math.ceil(progress_length * (batch_i + 1) / self.batch_n), progress_length)
+            if self.batch_n
+            else progress_length
+        )
+        bar = "━" * filled_length + "-" * (progress_length - filled_length)
+
+        remaining_time = 0.0
+        if batch_i > 0 and elapsed_time > 0 and self.batch_n:
             remaining_time = (self.batch_n - batch_i) * elapsed_time / batch_i
 
         entries = [self.prefix]
-        # entries +=
-        # + "|| epoch " + self.epoch_fmtstr.format(epoch_i+1) + " batch " + self.batch_fmtstr.format(batch_i+1)+" || "]
-        entries += "Epoch " + self.epoch_fmtstr.format(epoch_i) + ": "
-        entries += f"{percent:.0f}% | "
-        entries += f"{bar}| ",
+        entries += "epoch " + self.epoch_fmtstr.format(epoch_i) + " "
+        entries += f"| "
         entries += self.batch_fmtstr.format(batch_i)
-        entries += f" [{elapsed_time:.2f}s<{remaining_time:.2f}s, "
-        entries += f"{speed:.2f}it/s]"
-        # entries += "\n"
+        entries += f"  {bar} "
+        entries += f"〔 {elapsed_time:.2f}s<{remaining_time:.2f}s, "
+        entries += f"{speed:.2f}it/s 〕"
         entries += [str(meter) for meter in self.meters]
         logger.just_print("".join(entries))
 
@@ -112,10 +151,11 @@ class ProgressMeter:
         # return "[" + fmt + f"/{n}" + "]"
         return fmt + f"/{n}"
 
+
 class AverageMeter:
     """Computes and stores the average and current value"""
 
-    def __init__(self, monitor, avg_print = False, greater_is_better = False, fmt= ".3f"):
+    def __init__(self, monitor, avg_print=False, greater_is_better=False, fmt=".3f"):
         self.monitor = monitor
         self.avg_print = avg_print
         self.greater_is_better = greater_is_better
@@ -152,10 +192,14 @@ class AverageMeter:
 
 
     def __str__(self):
+        arrow = "↑" if self.greater_is_better else "⬇"
         if self.avg_print:
-            fmtstr = f" | █ {self.monitor.upper()}: {format(self.val, self.fmt)} (BEST: {format(self.best, self.fmt)}) (AVG: {format(self.avg, self.fmt)}) "
+            fmtstr = (
+                f" | {arrow} {self.monitor.lower()}: {format(self.val, self.fmt)} "
+                f"(best: {format(self.best, self.fmt)})(avg: {format(self.avg, self.fmt)}) "
+            )
         else:
-            fmtstr = f" | █ {self.monitor.upper()}: {format(self.val, self.fmt)} (BEST: {format(self.best, self.fmt)}) "
+            fmtstr = f" | {arrow} {self.monitor.lower()}: {format(self.val, self.fmt)} (best: {format(self.best, self.fmt)})"
         return fmtstr
 
 

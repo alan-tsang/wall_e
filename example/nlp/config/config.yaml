@@ -1,27 +1,19 @@
+# Custom parameters
+defaults:
+  - _self_
+  - model: simple
+  - data: simple
+
 # Hydra Configuration for wall_e Framework
 # Usage: python train.py data=<choice> model=<choice> metric=<choice>
-data:
-  max_len: 36
-  vocab_n: 76
-  data_n: 320
-  batch_size: 16
-  seed_len: 10
-model:
-  type: "TransformerForCausalLM"
-  vocab_n: 76
-  num_layers: 2
-  d: 512
-  n: 8
-  max_len: 100
-  d_ff: 2048
-  dropout: 0.1
-  use_rope: true
+
+# ============================================
 # Main configuration
 run_name: ''
 run_dir: './runs'
 seed: 42
 # this will close wandb、checkpointing and logging
-debug: true
+debug: false
 training:
   epochs: 10
   # deepspeed config file path
@@ -34,12 +26,6 @@ training:
   # || seed, model weights, optimizer, scheduler, epoch, iter
   resume_from: null
   load_from: null
-#  activation_checkpoint: [
-#    'transformer.encoder.layers.0',
-#    'transformer.encoder.layers.1',
-#    'transformer.decoder.layers.0',
-#    'transformer.decoder.layers.1'
-#  ]
   valid_begin_epoch: 2
   valid_interval_epoch: 1
   valid_begin_iter: 10
@@ -50,9 +36,14 @@ training:
   test_interval_iter: 5
   progress_every_n_epochs: 1
   progress_every_n_batches: 1
-
+  #  activation_checkpoint: [
+  #    'transformer.encoder.layers.0',
+  #    'transformer.encoder.layers.1',
+  #    'transformer.decoder.layers.0',
+  #    'transformer.decoder.layers.1'
+  #  ]
 optimizer:
-  # 默认使用的是AdamW
+  # 默认使用的是AdamW优化器
   lr: 3e-4
   weight_decay: 0.01
 scheduler:
@@ -77,6 +68,6 @@ checkpoint:
   batch_interval: 10
 wandb:
   enable: true
-  proj_name: "wall_e example: copy str"
+  proj_name: "wall_e example - copy str"
   offline: true
   tags: ["wall_e", "example"]
