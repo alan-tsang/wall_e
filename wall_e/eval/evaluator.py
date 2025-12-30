@@ -64,6 +64,16 @@ class Evaluator:
         for key, value in metrics.items():
             registry.register(f"metric.{key}", value)
 
+    @staticmethod
+    def register_metric_meta(metric_meta: dict):
+        """Register metric direction meta.
+
+        key: metric name (same as registry.metric.* leaf key)
+        value: greater_is_better bool
+        """
+        for key, value in metric_meta.items():
+            registry.register(f"metric_meta.{key}", bool(value))
+
 
     def evaluate(self, size: int) -> dict:
         """Invoke ``evaluate`` method of each metric and collect the metrics
@@ -81,6 +91,7 @@ class Evaluator:
             of the metrics, and the values are corresponding results.
         """
         metrics = {}
+        metric_meta = {}
         for metric in self.metrics:
             _results = metric.evaluate(size)
 
@@ -93,8 +104,10 @@ class Evaluator:
                         'have different prefixes.')
 
             metrics.update(_results)
+            metric_meta.update(metric.get_monitor_metrics())
 
         self.register_metrics(metrics)
+        self.register_metric_meta(metric_meta)
 
         return metrics
 

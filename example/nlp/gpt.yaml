@@ -68,7 +68,7 @@ log:
   to_file: true
   level: "INFO"
   rank_level: "WARNING"
-pt:
+checkpoint:
   enable: true
   best_monitor:
     loss: false

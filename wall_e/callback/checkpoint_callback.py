@@ -24,10 +24,10 @@ class CheckpointCallback(BaseCallBack):
         self.logger = runner.logger
         cfg = self.runner.cfg
         self.save_enabled = self.runner.is_main_process or self.runner.is_deepspeed
-        self.begin_epoch = OmegaConf.select(cfg, "pt.begin_epoch", default = 1)
-        self.epoch_interval = OmegaConf.select(cfg, "pt.epoch_interval", default = 1)
-        self.begin_batch = OmegaConf.select(cfg, "pt.begin_batch", default = 1)
-        self.batch_interval = OmegaConf.select(cfg, "pt.batch_interval", default = None)
+        self.begin_epoch = OmegaConf.select(cfg, "checkpoint.begin_epoch", default = 1)
+        self.epoch_interval = OmegaConf.select(cfg, "checkpoint.epoch_interval", default = 1)
+        self.begin_batch = OmegaConf.select(cfg, "checkpoint.begin_batch", default = 1)
+        self.batch_interval = OmegaConf.select(cfg, "checkpoint.batch_interval", default = None)
 
         if self.runner.is_main_process:
             self.folder = self.generate_save_folder(
@@ -45,9 +45,9 @@ class CheckpointCallback(BaseCallBack):
 
         # TOPK相关的保存
         monitor = list(
-            OmegaConf.select(cfg, "pt.best_monitor", default = {"loss": False}).items()
+            OmegaConf.select(cfg, "checkpoint.best_monitor", default = {"loss": False}).items()
         )[0]
-        self.topk = OmegaConf.select(cfg, "pt.topk", default = 3)
+        self.topk = OmegaConf.select(cfg, "checkpoint.topk", default = 3)
         self.monitor = monitor[0]
         self.monitor_greater_is_better = monitor[1]
         self.topk_models: List[Dict] = []
@@ -130,18 +130,19 @@ class CheckpointCallback(BaseCallBack):
         }
 
         # 保存到文件
-        if not name.endswith(".pt"):
-            name = name + ".pt"
+        if not name.endswith(".pth"):
+            name = name + ".pth"
         save_path = os.path.join(self.folder, name)
         torch.save(checkpoint, save_path)
-        self.logger.info(f"检查点保存至: {save_path}")
+        if not save_path.endswith("latest.pth"):
+            self.logger.info(f"检查点保存至: {save_path}")
         return save_path
 
     # 各生命周期回调方法
-    def before_train(self):
-        """训练开始前保存初始模型"""
-        self.save_checkpoint("initial")
-        self.logger.info(f"初始模型保存成功: initial")
+    # def before_train(self):
+    #     """训练开始前保存初始模型"""
+    #     self.save_checkpoint("initial")
+    #     self.logger.info(f"初始模型保存成功: initial")
 
     def after_train(self):
         """训练结束后保存最终模型"""
@@ -157,7 +158,6 @@ class CheckpointCallback(BaseCallBack):
             if not self.runner.is_deepspeed:
                 self.save_checkpoint(f"latest")
 
-            # =====================
             if self.topk > 0 and self.monitor is not None:
                 self.handle_topk(current_epoch, None)
 
@@ -171,7 +171,6 @@ class CheckpointCallback(BaseCallBack):
             if not self.runner.is_deepspeed:
                 self.save_checkpoint(f"latest")
 
-            # ========================
             if self.topk > 0 and self.monitor is not None:
                 self.handle_topk(current_epoch, current_step)
 
@@ -318,7 +317,7 @@ class CheckpointCallback(BaseCallBack):
                     shutil.rmtree(best_dest)
                 shutil.copytree(best_source, best_dest)
         else:
-            best_dest = os.path.join(self.folder, "best.pt")
+            best_dest = os.path.join(self.folder, "best.pth")
             shutil.copyfile(best_source, best_dest)
         if self.runner.is_main_process:
             self.logger.info(f"更新最佳模型: {self.monitor}={best['value']:.4f} -> {best_dest}")

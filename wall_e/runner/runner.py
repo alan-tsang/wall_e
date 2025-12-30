@@ -21,7 +21,7 @@ from ..callback import (CheckpointCallback, SummaryCallBack,
                         ProcessCallBack, WandbCallback)
 from ..callback.base_callback import BaseCallBack
 from ..common.registry import registry
-from ..common.util import better_dict_4_print
+from ..common.util import better_dict_4_print, set_seed
 from ..dist.init import is_main_process
 from ..logging.logger import Logger
 from .loop.train_loop import TrainLoop
@@ -111,6 +111,7 @@ class Runner(RunnerBase):
         self.cfg = OmegaConf.create(cfg or {})
 
         self.state = RunnerState(self)
+
         registry.register("cfg", cfg)
         registry.register("cfg.run_timestamp", self.state.run_timestamp)
 
@@ -126,11 +127,11 @@ class Runner(RunnerBase):
         5. 设置回调函数
         6. 设置评估器
         """
+        set_seed(OmegaConf.select(self.cfg, "traing.seed", default = 42))
         # NOTE: train_loop会注入scheduler
         self.scheduler = None
         self.setup_launch_strategy()
         self.logger = self.setup_logger()
-
         self.setup_model_optimizer()
         self.setup_loop()
         self.setup_callbacks()
@@ -138,7 +139,11 @@ class Runner(RunnerBase):
 
     @property
     def is_deepspeed(self):
-        return self.state.ds_config is not None
+        return self.state.ds_config is not None and self.state.ds_config != ''
+
+    @property
+    def is_debug(self):
+        return OmegaConf.select(self.cfg, "debug", default = False)
 
     @property
     def device(self):
@@ -204,7 +209,7 @@ class Runner(RunnerBase):
         super().before_fit()
         self.log_initial_info()
         # 将配置文件写入到实验目录中
-        if self.is_main_process:
+        if not self.is_debug and self.is_main_process:
             cfg_write_folder = os.path.join(
                 self.cfg.run_dir,
                 self.cfg.run_name,
@@ -225,7 +230,10 @@ class Runner(RunnerBase):
         self.logger.info(f"启动方式：{self.state.start_msg}")
         self.logger.info(f"启动设备：{self.state.device}")
         self.logger.info(f"当前运行配置：\n{better_dict_4_print(self.cfg)}")
-        self.logger.info(f"当前运行模型：{self.model.__class__.__name__}")
+        if hasattr(self.model, 'module'):
+            self.logger.info(f"当前运行模型：{self.model.module.__class__.__name__}")
+        else:
+            self.logger.info(f"当前运行模型：{self.model.__class__.__name__}")
         if OmegaConf.select(self.cfg, "training.print_model", default = True):
             # support distributed print, means print only once in the main process
             self.logger.just_print(self.state.model_info)
@@ -292,11 +300,12 @@ class Runner(RunnerBase):
         - folder: 日志文件目录
         - run_name: 运行名称
         """
+
         return Logger.get_instance(
             "runner",
             level = OmegaConf.select(self.cfg, "log.level", default = 'INFO'),
             rank_level = OmegaConf.select(self.cfg, "log.rank_level", default = "WARNING"),
-            to_file = OmegaConf.select(self.cfg, "log.to_file", default = True),
+            to_file = (not self.is_debug) and OmegaConf.select(self.cfg, "log.to_file", default = True),
             folder = OmegaConf.select(self.cfg, "run_dir", default = './run'),
             run_name = OmegaConf.select(self.cfg, "run_name", default = 'default')
         )
@@ -333,7 +342,7 @@ class Runner(RunnerBase):
     def setup_model_optimizer(self):
         """
         设置模型和优化器
-        
+
         包括：
         1. 模型检查点重载
         2. 激活值重算设置（用于节省显存）
@@ -359,9 +368,6 @@ class Runner(RunnerBase):
 
         # 分布式模型重载
         device = self.device
-        if device.type == "cpu":
-            self.state.start_msg = "使用CPU启动中..."
-            return
 
         self.model = self.model.to(device)
         if dist.is_initialized():
@@ -382,7 +388,11 @@ class Runner(RunnerBase):
                 )
                 self.state.start_msg = "使用分布式训练启动中..."
         else:
-            self.state.start_msg = "使用单卡启动中..."
+            if device.type == "cpu":
+                self.state.start_msg = "使用CPU启动中..."
+            else:
+                self.state.start_msg = "使用单卡启动中..."
+
 
         # 如果没有设置优化器，创建默认优化器
         if self.optimizer is None:
@@ -391,6 +401,8 @@ class Runner(RunnerBase):
                 lr = self.cfg.optimizer.lr,
                 weight_decay = self.cfg.optimizer.weight_decay
             )
+            self.logger.info("未提供优化器，已创建默认AdamW优化器。")
+
 
 
     def setup_callbacks(self):
@@ -407,8 +419,9 @@ class Runner(RunnerBase):
         """
         summary_callback = SummaryCallBack(self)
         progress_callback = ProcessCallBack(self)
+
         wandb_callback = None
-        if OmegaConf.select(self.cfg, "wandb.enable", default = True):
+        if not self.is_debug and OmegaConf.select(self.cfg, "wandb.enable", default = True):
             try:
                 import wandb
             except ImportError:
@@ -420,7 +433,7 @@ class Runner(RunnerBase):
             else:
                 wandb_callback = WandbCallback(self)
 
-        if OmegaConf.select(self.cfg, "pt.enable", default = True) \
+        if (not self.is_debug and OmegaConf.select(self.cfg, "checkpoint.enable", default = True)) \
                 or self.state.resume_from:
             checkpoint_callback = CheckpointCallback(self)
         else:

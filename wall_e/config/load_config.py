@@ -1,46 +1,72 @@
+import os
+from pathlib import Path
 import wandb
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, DictConfig, DictConfig, DictConfig
+
+
+def _load_recursive(path, loaded_files=None):
+    """
+    Recursively loads a configuration file and its defaults, handling nested structures.
+    """
+    if loaded_files is None:
+        loaded_files = set()
+
+    abs_path = Path(path).resolve()
+    if abs_path in loaded_files:
+        return OmegaConf.create()  # Avoid circular dependencies
+    loaded_files.add(abs_path)
+
+    if not abs_path.exists():
+        return OmegaConf.create()
+
+    main_cfg = OmegaConf.load(abs_path)
+    config_dir = abs_path.parent
+
+    # Start with an empty config that we will build up
+    merged_cfg = OmegaConf.create()
+
+    # Process the defaults list first
+    if 'defaults' in main_cfg:
+        for default in main_cfg.defaults:
+            if default == '_self_':
+                # In Hydra, _self_ is a marker. The file's contents are merged at its position.
+                # To match the user's expectation of _self_ being a base, we merge it first.
+                self_cfg = OmegaConf.masked_copy(main_cfg, list(main_cfg.keys() - {'defaults'}))
+                merged_cfg = OmegaConf.merge(merged_cfg, self_cfg)
+                continue
+
+            if isinstance(default, DictConfig):
+                for key, value in default.items():
+                    default_path = config_dir / key / f"{value}.yaml"
+                    # Recursive call to handle nested defaults
+                    default_cfg = _load_recursive(default_path, loaded_files)
+                    # The new config (default_cfg) overrides the existing one (merged_cfg)
+                    default_cfg = OmegaConf.create({key: default_cfg})
+                    merged_cfg = OmegaConf.merge(merged_cfg, default_cfg)
+    else:
+        # If no 'defaults' list, the file content is the config
+        merged_cfg = main_cfg
+
+    return merged_cfg
 
 
 def load_cfg(path):
-    base_cfg = OmegaConf.load(path)
+    """
+    Load configuration from a file, supporting Hydra-style recursive defaults.
+    """
+    # Recursively load the base configuration and all its defaults
+    base_cfg = _load_recursive(path)
+
+    # Merge CLI overrides, which have the highest precedence over file-based configs
     cli_cfg = OmegaConf.from_cli()
-    ds_cfg = base_cfg.get("training.ds_config", None)
-    ds_cfg = OmegaConf.load(ds_cfg) if ds_cfg else {}
 
-    # is_sweep = base_cfg.training.get("is_sweep", False)
-    # print("wandb sweep: ", is_sweep)
-    runtime_cfg = {}
-    # if is_sweep:
-    #     """
-    #     for wandb sweep, this can experiment with different hyperparameters
-    #     """
-    #     from ..dist.init import init_distributed_mode, is_main_process
-    #     from ..dist.utils import barrier
-    #     from ..dist.cmc import broadcast_object_list
-    #
-    #     init_distributed_mode()
-    #     if is_main_process():
-    #         wandb.init(
-    #             project = base_cfg.wandb.wandb_project_name,
-    #             name = base_cfg.run_name
-    #         )
-    #         runtime_cfg = wandb.config
-    #     else:
-    #         runtime_cfg = {}
-    #
-    #     broadcast_object_list([dict(runtime_cfg)], src = 0)
-    #     barrier()
+    # Final merge to ensure CLI overrides everything
+    cfg = OmegaConf.merge(base_cfg, cli_cfg)
 
-    cfg = OmegaConf.merge(base_cfg, dict(runtime_cfg), ds_cfg, cli_cfg)
-    """
-    if is_runtime, wandb will not init in the runner again, and as well, 
-    the cfg should be updated to wandb.config
-    """
-    # if is_sweep:
-    #     wandb.config.update(dict(cfg))
+    # DeepSpeed config handling remains separate as it's often a CLI arg
+    ds_config_path = cfg.get("training.ds_config", None)
+    if ds_config_path and os.path.exists(ds_config_path):
+        ds_cfg = OmegaConf.load(ds_config_path)
+        cfg = OmegaConf.merge(cfg, ds_cfg)
 
     return cfg
-    # from .runner_config import RunnerConfig
-    # return RunnerConfig(**cfg)
-

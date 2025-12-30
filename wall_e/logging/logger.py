@@ -15,15 +15,24 @@ from ..common.util import now
 class LoggerFormatter(logging.Formatter):
     def __init__(self, fmt: Optional[str] = None, datefmt: Optional[str] = None):
         # 在日志格式中添加进程ID和进程排名信息
-        fmt = fmt or ('[%(asctime)s] | [PID:%(process)d RANK:%(rank)s] | [%(levelname)s] | '
-                      '[%(filename)s:%(funcName)s():%(lineno)d] %(message)s')
+        # fmt = fmt or ('[%(asctime)s] | [pid:%(process)d rank:%(rank)s] | [%(levelname)s] | '
+        #               '[%(filename)s:%(funcName)s():%(lineno)d] %(message)s')
+        fmt = fmt or ('[%(asctime)s] [%(levelname)s] [rank%(rank)s] ➜ '
+                      '%(message)s')
         super().__init__(fmt, datefmt)
 
     def format(self, record):
         # 添加进程排名信息到日志记录
         if not hasattr(record, 'rank'):
             record.rank = get_rank() if dist.is_initialized() else 0
-        return super().format(record)
+
+        # 美化格式
+        record.levelname = f"{record.levelname}"
+
+        # 原始格式化
+        formatted_message = super().format(record)
+
+        return formatted_message
 
 
 class Logger(ManagerMixin):
@@ -69,8 +78,13 @@ class Logger(ManagerMixin):
 
         # 只在主进程记录日志创建信息
         if self.is_master:
-            self.logger.info(
-                f"Logger {self.name} created at: {os.path.abspath(file_path if file_path else 'console only')}"
+            if file_path is None:
+                self.logger.info(
+                    f"Logger {self.name} created, and console only"
+                )
+            else:
+                self.logger.info(
+                    f"Logger {self.name} created at: {os.path.abspath(file_path)}"
                 )
             self.logger.info(f"Master log level: {level}, Worker log level: {rank_level}")
 

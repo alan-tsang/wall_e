@@ -21,7 +21,6 @@ class WandbCallback(BaseCallBack):
             wandb.init(
                 project=OmegaConf.select(cfg,"wandb.proj_name", default = 'default'),
                 name=OmegaConf.select(cfg,"run_name", default = 'default'),
-                notes = cfg.get("run_description", ""),
                 mode="offline" if OmegaConf.select(cfg,"wandb.offline", default = False) \
                     else "online",
                 config = dict(cfg),
