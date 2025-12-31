@@ -142,6 +142,10 @@ class Runner(RunnerBase):
         return self.state.ds_config is not None and self.state.ds_config != ''
 
     @property
+    def is_fsdp(self):
+        return bool(getattr(self.state, "fsdp_enabled", False))
+
+    @property
     def is_debug(self):
         return OmegaConf.select(self.cfg, "debug", default = False)
 
@@ -313,19 +317,18 @@ class Runner(RunnerBase):
     def setup_launch_strategy(self):
         """
         根据设备数量、类型，自动判断单机、分布式并行、CPU
-        
+
         启动方式：
         - 单机、CPU: python ./train.py
         - 分布式: python -m torch.distributed.launch --nproc_per_node=4 ./train.py
-        
+
         该函数兼容ray的分布式环境处理
         """
         if torch.cuda.is_available():
-            # if dist.is_available() and not dist.is_initialized():
             from ..dist.init import init_distributed_mode
             if not dist.is_initialized():
                 num_gpus = torch.cuda.device_count()
-                if num_gpus > 1 or self.is_deepspeed:
+                if num_gpus > 1 or self.is_deepspeed or self.is_fsdp:
                     is_successful = init_distributed_mode()
                     if is_successful is False:
                         raise Exception("检测到分布式环境，尝试以torchrun启动脚本！")
@@ -347,7 +350,7 @@ class Runner(RunnerBase):
         1. 模型检查点重载
         2. 激活值重算设置（用于节省显存）
         3. 模型设备迁移
-        4. 分布式训练包装（DDP或DeepSpeed）
+        4. 分布式训练包装（DDP/DeepSpeed/FSDP）
         5. 默认优化器创建
         """
         # 检查点重载
@@ -368,8 +371,8 @@ class Runner(RunnerBase):
 
         # 分布式模型重载
         device = self.device
-
         self.model = self.model.to(device)
+
         if dist.is_initialized():
             if self.is_deepspeed:
                 import deepspeed
@@ -380,6 +383,8 @@ class Runner(RunnerBase):
                     config = self.state.ds_config,
                 )
                 self.state.start_msg = "使用deepspeed启动中..."
+            elif self.is_fsdp:
+                self._fsdp_start()
             else:
                 self.model = torch.nn.parallel.DistributedDataParallel(
                     self.model,
@@ -506,14 +511,113 @@ class Runner(RunnerBase):
         else:
             return data_loader
 
-    # @main_process
-    # def wandb_log(self, log_dict):
-    #     if self.cfg.get("wandb.wandb_enable", False):
-    #         try:
-    #             import wandb
-    #         except ImportError:
-    #             warnings.warn("未安装wandb，请使用pip install wandb安装.")
-    #         else:
-    #             if wandb.run is not None:
-    #                 wandb.log(log_dict)
-    #                 self.logger.info(f"wandb记录：{log_dict}")
+
+    def _fsdp_start(self):
+        from torch.distributed.fsdp import (
+            FullyShardedDataParallel as FSDP,
+            MixedPrecision,
+            BackwardPrefetch,
+            ShardingStrategy,
+        )
+        from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
+
+        mp = None
+        mp_cfg = str(getattr(self.state, "fsdp_mixed_precision", "bf16")).lower()
+        if mp_cfg in {"bf16", "bfloat16"}:
+            mp = MixedPrecision(
+                param_dtype = torch.bfloat16,
+                reduce_dtype = torch.bfloat16,
+                buffer_dtype = torch.bfloat16,
+            )
+        elif mp_cfg in {"fp16", "float16"}:
+            mp = MixedPrecision(
+                param_dtype = torch.float16,
+                reduce_dtype = torch.float16,
+                buffer_dtype = torch.float16,
+            )
+
+        auto_wrap_policy = None
+        # config:
+        #   training.fsdp.auto_wrap_policy: transformer
+        #   training.fsdp.wrap_modules: ["transformer.encoder.layers.0", ...]   # explicit module paths (preferred)
+        #   training.fsdp.wrap_blocks:  ["GPT2Block", "LlamaDecoderLayer", ...] # module class names
+        if (str(getattr(self.state, "fsdp_auto_wrap_policy", "")).lower()
+                in {"transformer", "transformer_block"}):
+            root_model = self.model
+            while hasattr(root_model, "module"):
+                root_model = root_model.module
+
+            # 1) abs-Path-based wrapping ["transformer.encoder.layers.0", ...]
+            requested_paths = getattr(self.state, "fsdp_wrap_modules", None)
+            if isinstance(requested_paths, str):
+                requested_paths = [requested_paths]
+
+            if requested_paths:
+                from operator import attrgetter
+
+                target_ids = set()
+                for p in requested_paths:
+                    try:
+                        m = attrgetter(p)(root_model)
+                    except Exception as e:
+                        raise ValueError(f"FSDP wrap_modules path not found: '{p}'") from e
+                    target_ids.add(id(m))
+
+                def _path_based_policy(module, recurse, nonwrapped_numel):
+                    return id(module) in target_ids
+
+                auto_wrap_policy = _path_based_policy
+            else:
+                # 2) Class-name based wrapping ["GPT2Block", "LlamaDecoderLayer", ...]
+                requested = getattr(self.state, "fsdp_wrap_blocks", None)
+
+                # Normalize to list[str]
+                if isinstance(requested, str):
+                    requested_names = [requested]
+                elif requested is None:
+                    requested_names = []
+                else:
+                    try:
+                        requested_names = list(requested)
+                    except TypeError:
+                        requested_names = []
+
+                if not requested_names:
+                    raise ValueError(
+                        "FSDP auto_wrap_policy='transformer' requires specifying which module(s) to wrap via "
+                        "training.fsdp.wrap_modules (list of model paths) or training.fsdp.wrap_blocks (list of class names) "
+                    )
+
+                # Build a map from class name -> class type by scanning the actual model modules.
+                name_to_cls = {}
+                for m in root_model.modules():
+                    cls = m.__class__
+                    name_to_cls.setdefault(cls.__name__, cls)
+
+                missing = [n for n in requested_names if n not in name_to_cls]
+                if missing:
+                    available = sorted(name_to_cls.keys())
+                    preview = ", ".join(available[:30]) + (" ..." if len(available) > 30 else "")
+                    raise ValueError(
+                        f"FSDP wrap block class(es) not found in model: {missing}. "
+                        f"Available module class names (preview): {preview}"
+                    )
+
+                import functools
+
+                wrap_classes = {name_to_cls[n] for n in requested_names}
+                auto_wrap_policy = functools.partial(
+                    transformer_auto_wrap_policy,
+                    transformer_layer_cls = wrap_classes,
+                )
+
+        self.model = FSDP(
+            self.model,
+            auto_wrap_policy = auto_wrap_policy,
+            mixed_precision = mp,
+            backward_prefetch = BackwardPrefetch.BACKWARD_PRE,
+            sharding_strategy = ShardingStrategy.FULL_SHARD,
+            device_id = self.device if self.device.type == "cuda" else None,
+            use_orig_params = True,
+        )
+        self.state.start_msg = "使用FSDP启动中..."

@@ -100,3 +100,4 @@ def test_after_running_epoch(mock_makedirs, mock_get_rng_state, mock_save):
     # 验证 latest 检查点的日志信息
     # expected_latest_path = os.path.join(callback.folder, "latest.pth")
     # runner.logger.info.assert_any_call(f"检查点保存至: {expected_latest_path}")
+

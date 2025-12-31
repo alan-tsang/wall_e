@@ -72,6 +72,7 @@ class CheckpointCallback(BaseCallBack):
         return folder
 
     def _get_model_state(self):
+        # for FSDP we must use FSDP.state_dict_type context, handled by _save_fsdp_checkpoint
         return self.runner.model.module.state_dict() if hasattr(self.runner.model, "module") \
             else self.runner.model.state_dict()
 
@@ -88,15 +89,16 @@ class CheckpointCallback(BaseCallBack):
         """智能保存检查点"""
         if self.runner.is_deepspeed:
             return self._save_deepspeed_checkpoint(name)
-        else:
-            return self._save_standard_checkpoint(name)
+        if getattr(self.runner, "is_fsdp", False):
+            return self._save_fsdp_checkpoint(name)
+        return self._save_standard_checkpoint(name)
 
     def _save_deepspeed_checkpoint(self, name: str):
         """DeepSpeed专用保存"""
         from deepspeed.utils import logger as ds_logger
         client_state = {
             "epoch": self.runner.state.current_epoch,
-            "batch": self.runner.state.current_batch,
+            "step": self.runner.state.current_step,
             "rng_state": torch.get_rng_state(),
             "cfg": self.runner.cfg
         }
@@ -112,6 +114,96 @@ class CheckpointCallback(BaseCallBack):
         ds_logger.info(f"DeepSpeed检查点保存至: {save_path}")
         return save_path
 
+    def _save_fsdp_checkpoint(self, name: str):
+        """FSDP专用保存（支持 full/sharded）"""
+        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+        from torch.distributed.fsdp import StateDictType
+        from torch.distributed.fsdp.api import (
+            FullStateDictConfig,
+            FullOptimStateDictConfig,
+            ShardedStateDictConfig,
+            ShardedOptimStateDictConfig,
+        )
+
+        # Ensure folder creation is decided by rank0, then broadcast like DeepSpeed
+        if self.runner.is_main_process:
+            os.makedirs(self.folder, exist_ok=True)
+        if torch.distributed.is_initialized():
+            barrier()
+
+        state_type = str(getattr(self.runner.state, "fsdp_state_dict_type", "sharded")).lower()
+
+        # Normalize name
+        if not name.endswith(".pth") and state_type == "full":
+            name = name + ".pth"
+
+        if state_type == "full":
+            # Full state dict saved only on rank0.
+            save_path = os.path.join(self.folder, name)
+            full_cfg = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+            full_optim_cfg = FullOptimStateDictConfig(offload_to_cpu=True, rank0_only=True)
+            with FSDP.state_dict_type(
+                self.runner.model,
+                StateDictType.FULL_STATE_DICT,
+                full_cfg,
+                full_optim_cfg,
+            ):
+                model_state = self.runner.model.state_dict()
+                optim_state = FSDP.optim_state_dict(self.runner.model, self.runner.optimizer)
+
+            if not self.runner.is_main_process:
+                return None
+
+            checkpoint = {
+                "model": model_state,
+                "optimizer": optim_state,
+                "scheduler": self._get_scheduler_state(),
+                "epoch": self.runner.state.current_epoch,
+                "step": self.runner.state.current_step,
+                "rng_state": torch.get_rng_state(),
+                "cfg": dict(self.runner.cfg),
+                "fsdp": {"state_dict_type": "full"},
+            }
+            torch.save(checkpoint, save_path)
+            if not save_path.endswith("latest.pth"):
+                self.logger.info(f"FSDP(full)检查点保存至: {save_path}")
+            return save_path
+
+        # Sharded state dict: each rank writes its own file into a folder.
+        folder = os.path.join(self.folder, name)
+        if self.runner.is_main_process:
+            os.makedirs(folder, exist_ok=True)
+        if torch.distributed.is_initialized():
+            barrier()
+
+        shard_cfg = ShardedStateDictConfig(offload_to_cpu=True)
+        shard_optim_cfg = ShardedOptimStateDictConfig(offload_to_cpu=True)
+        with FSDP.state_dict_type(
+            self.runner.model,
+            StateDictType.SHARDED_STATE_DICT,
+            shard_cfg,
+            shard_optim_cfg,
+        ):
+            model_state = self.runner.model.state_dict()
+            optim_state = FSDP.optim_state_dict(self.runner.model, self.runner.optimizer)
+
+        rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+        save_path = os.path.join(folder, f"rank{rank}.pth")
+        checkpoint = {
+            "model": model_state,
+            "optimizer": optim_state,
+            "scheduler": self._get_scheduler_state(),
+            "epoch": self.runner.state.current_epoch,
+            "step": self.runner.state.current_step,
+            "rng_state": torch.get_rng_state(),
+            "cfg": dict(self.runner.cfg),
+            "fsdp": {"state_dict_type": "sharded", "rank": rank},
+        }
+        torch.save(checkpoint, save_path)
+        if self.runner.is_main_process:
+            self.logger.info(f"FSDP(sharded)检查点保存至: {folder} (每个rank一个文件)")
+        return folder
+
     def _save_standard_checkpoint(self, name: str):
         """保存标准PyTorch检查点（非DeepSpeed环境）"""
         # 确保仅在主进程执行保存操作
@@ -124,7 +216,7 @@ class CheckpointCallback(BaseCallBack):
             "optimizer": self._get_optimizer_state(),
             "scheduler": self._get_scheduler_state(),
             "epoch": self.runner.state.current_epoch,
-            "batch": self.runner.state.current_batch,
+            "step": self.runner.state.current_step,
             "rng_state": torch.get_rng_state(),
             "cfg": dict(self.runner.cfg),
         }
@@ -185,8 +277,9 @@ class CheckpointCallback(BaseCallBack):
         """智能加载检查点"""
         if self.runner.is_deepspeed:
             return self._load_deepspeed_checkpoint(path)
-        else:
-            return self._load_standard_checkpoint(path)
+        if getattr(self.runner, "is_fsdp", False):
+            return self._load_fsdp_checkpoint(path)
+        return self._load_standard_checkpoint(path)
 
     def _load_deepspeed_checkpoint(self, path: str):
         tag = os.path.split('/')[-1]
@@ -210,6 +303,75 @@ class CheckpointCallback(BaseCallBack):
             registry.register("cfg", client_state["cfg"])
 
         return client_state.get("epoch", 0), client_state.get("batch", 0)
+
+    def _load_fsdp_checkpoint(self, path: str) -> tuple[int, int]:
+        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+        from torch.distributed.fsdp import StateDictType
+        from torch.distributed.fsdp.api import (
+            FullStateDictConfig,
+            FullOptimStateDictConfig,
+            ShardedStateDictConfig,
+            ShardedOptimStateDictConfig,
+        )
+
+        # Determine if it's full (.pth file) or sharded (directory)
+        is_dir = os.path.isdir(path)
+        if is_dir:
+            rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+            ckpt_path = os.path.join(path, f"rank{rank}.pth")
+            checkpoint = torch.load(ckpt_path, map_location="cpu")
+            shard_cfg = ShardedStateDictConfig(offload_to_cpu=True)
+            shard_optim_cfg = ShardedOptimStateDictConfig(offload_to_cpu=True)
+            with FSDP.state_dict_type(
+                self.runner.model,
+                StateDictType.SHARDED_STATE_DICT,
+                shard_cfg,
+                shard_optim_cfg,
+            ):
+                self.runner.model.load_state_dict(checkpoint["model"], strict=True)
+                if checkpoint.get("optimizer") is not None:
+                    optim_state = checkpoint["optimizer"]
+                    optim_state = FSDP.optim_state_dict_to_load(
+                        self.runner.model,
+                        self.runner.optimizer,
+                        optim_state,
+                    )
+                    self.runner.optimizer.load_state_dict(optim_state)
+        else:
+            checkpoint = torch.load(path, map_location="cpu")
+            full_cfg = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+            full_optim_cfg = FullOptimStateDictConfig(offload_to_cpu=True, rank0_only=True)
+            with FSDP.state_dict_type(
+                self.runner.model,
+                StateDictType.FULL_STATE_DICT,
+                full_cfg,
+                full_optim_cfg,
+            ):
+                # model.load_state_dict must be called on all ranks; FSDP will broadcast
+                self.runner.model.load_state_dict(checkpoint["model"], strict=True)
+                if checkpoint.get("optimizer") is not None:
+                    optim_state = checkpoint["optimizer"]
+                    optim_state = FSDP.optim_state_dict_to_load(
+                        self.runner.model,
+                        self.runner.optimizer,
+                        optim_state,
+                    )
+                    self.runner.optimizer.load_state_dict(optim_state)
+
+        # scheduler state
+        if checkpoint.get("scheduler") is not None and self.runner.scheduler is not None:
+            self.runner.scheduler.load_state_dict(checkpoint["scheduler"])
+
+        # rng
+        if "rng_state" in checkpoint:
+            torch.set_rng_state(checkpoint["rng_state"])
+
+        # cfg
+        if "cfg" in checkpoint:
+            self.runner.cfg = checkpoint["cfg"]
+            registry.register("cfg", checkpoint["cfg"])
+
+        return checkpoint.get("epoch", 0), checkpoint.get("batch", 0)
 
     def _load_standard_checkpoint(self, path: str) -> tuple[int, int]:
         """加载标准PyTorch检查点（非DeepSpeed环境）"""

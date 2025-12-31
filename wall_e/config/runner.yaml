@@ -4,11 +4,6 @@ defaults:
   - model: simple
   - dataset: simple
 
-defaults:
-  - _self_
-  - model: simple
-  - dataset: simple
-
 # Hydra Configuration for wall_e Framework
 # Usage: python train.py data=<choice> model=<choice> metric=<choice>
 
@@ -23,6 +18,26 @@ training:
   epochs: 10
   # deepspeed config file path
   ds_config: null
+  fsdp:
+    enable: false
+    # options: sharded | full
+    # - sharded: faster + smaller, good for resume training
+    # - full: single-file checkpoint on rank0, good for export
+    state_dict_type: sharded
+    # options: bf16 | fp16 | null
+    mixed_precision: bf16
+    # options: transformer | null
+    # transformer: shard at the specified block/layer level
+    # null: shard at each parameter level
+    auto_wrap_policy: null
+    # Which module(s) to wrap when auto_wrap_policy=transformer.
+    # You can specify either:
+    # 1) wrap_modules: ["transformer.encoder.layers.0", "transformer.encoder.layers.1", ...]  (model path, recommended)
+    # 2) wrap_blocks:  ["GPT2Block", "LlamaDecoderLayer", ...]                                 (class name)
+    # Using wrap_modules mirrors training.activation_checkpoint style and is the most direct + convenient.
+    wrap_modules: null
+    # Which module class(es) to wrap when auto_wrap_policy=transformer (fallback).
+    wrap_blocks: null
   gradient_accumulation: 1
   grad_clip: null
   fp16: false
